@@ -18,6 +18,9 @@ const FRIENDLY: Record<string, string> = {
   code_expired: "El código venció. Pide uno nuevo.",
   code_too_soon: "Ya te enviamos un código hace poco. Espera unos segundos y vuelve a pedirlo.",
   session_invalid: "Tu sesión terminó. Vuelve a entrar.",
+  code_session_required: "Para registrar la presentación entra a tu panel con el código de WhatsApp.",
+  observer_restricted: "Tu cuenta es de observador. Solo un miembro de la ONG puede editar o enviar el expediente.",
+  code_limit: "Pediste muchos códigos. Espera una hora e inténtalo otra vez.",
   network: "No pudimos conectar. Revisa tu señal e inténtalo otra vez.",
   timeout: "La conexión está muy lenta. Inténtalo otra vez.",
 };

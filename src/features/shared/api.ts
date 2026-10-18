@@ -18,7 +18,12 @@ export const pdfUrl = (token: string) => `${API_URL}${expPath(token)}?formato=pd
 
 export const loadExpediente = (token: string) => call<Payload>(expPath(token), "GET").then((r) => r.data);
 
-export const saveExpediente = (token: string, patch: Patch) => call<Payload>(expPath(token), "PATCH", patch).then((r) => r.data);
+/** Recording filings needs the member's code session, so that patch also carries the stored bearer. */
+export const saveExpediente = (token: string, patch: Patch) =>
+  ("filings" in patch
+    ? request<Payload>(expPath(token), { method: "PATCH", body: patch, cache: "no-store" })
+    : call<Payload>(expPath(token), "PATCH", patch)
+  ).then((r) => r.data);
 
 export type SendResult =
   | { status: 202; data: { status: "code_sent"; phone_hint: string; expires_in: number } }
