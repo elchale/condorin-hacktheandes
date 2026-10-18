@@ -51,7 +51,7 @@ A scene with no findings is sent with `"detections": []`; the backend stores it 
 | `confidence` | model confidence, 4 decimals |
 | `bbox` | `[x, y, w, h]` integer pixels of the full original image, top-left origin |
 | `lat`/`lon` | box centre, linear interpolation inside the scene bounds (below) |
-| `crop_uri` | PNG of the box plus 32 px (at least 128 px), written once to `crops/<object without ext>/<generation>/<model version>/<i>.png`, with its own `#generation` |
+| `crop_uri` | `CROP_MODE=scene_boxed` (default): one JPEG per scene, the whole scene downscaled to at most 1600 px with a numbered red box on every reported detection, at `crops/<object without ext>/<generation>/<model version>/scene.jpg`; every detection of the scene has the same `crop_uri`. `CROP_MODE=crop`: a PNG close-up per detection (box plus 32 px, at least 128 px) at `.../<i>.png`. Written once (never overwritten), with its own `#generation`. The backend pins it as evidence and uses the strongest detection's `crop_uri` as the WhatsApp alert image; the untouched scene is pinned separately as the image itself |
 
 ### Bounds
 
