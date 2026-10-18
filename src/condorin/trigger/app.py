@@ -117,8 +117,10 @@ def create_app() -> FastAPI:
     setup_logging(settings.log_level)
     app = FastAPI(title="condorin-detector-trigger", docs_url=None, redoc_url=None)
 
-    @app.get("/healthz")
-    def healthz() -> dict:
+    # Not /healthz: Cloud Run's front end reserves paths ending in "z" and answers them with 404
+    # before they reach the container.
+    @app.get("/health")
+    def health() -> dict:
         return {"ok": True}
 
     @app.post("/procesar", status_code=202)
