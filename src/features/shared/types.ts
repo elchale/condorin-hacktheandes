@@ -134,5 +134,11 @@ export type Panel = {
   member: { name: string; phone: string; joined_now: boolean };
   ong: { name: string; rivers: { slug: string; name: string; protected_area: string }[]; members: number };
   totals: { incidents: number; without_expediente: number; draft: number; ready: number; filed: number };
+  /** First page of incidents, newest first; the rest come from GET /api/v1/me/incidentes?page=N. */
   incidents: Incident[];
+  /** DRF page links (absolute URLs); `count` is every incident of the ONG. */
+  pagination?: { count: number; next: string | null; previous: string | null };
 };
+
+/** DRF's standard PageNumberPagination envelope. */
+export type Page<T> = { count: number; next: string | null; previous: string | null; results: T[] };

@@ -2,9 +2,9 @@
 // carry only the token in the path, with credentials omitted; panel calls carry the bearer session.
 
 import { API_URL } from "../../config";
-import { readSession, saveSession } from "../../lib/storage";
+import { clearSession, readSession, saveSession } from "../../lib/storage";
 import type { Session } from "../../types";
-import type { ApiError, Panel, Patch, Payload, Status } from "./types";
+import type { ApiError, Incident, Page, Panel, Patch, Payload, Status } from "./types";
 
 /** Thrown for any non 2xx answer, carrying the API's error envelope. */
 export class ExpedienteError extends Error {
@@ -37,6 +37,8 @@ async function call<T>(path: string, method: string, body?: unknown, bearer?: st
     throw new ExpedienteError(0, OFFLINE);
   }
   const data = await res.json().catch(() => null);
+  // A dead bearer session signs the member out everywhere; pages that need one send them to /entrar.
+  if (res.status === 401 && bearer && (!data?.type || data.type === "session_invalid") && readSession()?.token === bearer) clearSession();
   if (!res.ok) throw new ExpedienteError(res.status, data?.type ? data : FALLBACK);
   return { status: res.status, data: data as T };
 }
@@ -67,8 +69,23 @@ export type Evento = {
 
 export const loadEvento = (token: string) => call<Evento>(`/api/v1/eventos/${encodeURIComponent(token)}`, "GET").then((r) => r.data);
 
-/** The member panel (`PanelView`), for the bearer session. */
+/** The member panel (`PanelView`) with the first page of incidents, for the bearer session. */
 export const loadMe = (session: string) => call<Panel>("/api/v1/me", "GET", undefined, session).then((r) => r.data);
+
+/** The page number in a DRF `next` link (the link itself may name another host or scheme). */
+export function pageOf(link: string | null): number | null {
+  if (!link) return null;
+  try {
+    const n = Number(new URL(link).searchParams.get("page"));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One more page of the member's incidents ("Ver más"). */
+export const loadIncidents = (session: string, page: number) =>
+  call<Page<Incident>>(`/api/v1/me/incidentes?page=${page}`, "GET", undefined, session).then((r) => r.data);
 
 /** The member's personal expediente token for one incident (created if they had no alert for it). */
 export const expedienteToken = (session: string, incidentId: number) =>

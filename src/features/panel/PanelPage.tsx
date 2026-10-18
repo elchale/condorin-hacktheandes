@@ -3,11 +3,11 @@ import { WelcomeOverlay } from "../../components/WelcomeOverlay";
 import { useSession } from "../../lib/hooks";
 import { clearSession } from "../../lib/storage";
 import { navigate, useLocation } from "../../router";
-import { ExpedienteError, expedienteToken, loadMe } from "../shared/api";
+import { ExpedienteError, expedienteToken, loadIncidents, loadMe, pageOf } from "../shared/api";
 import { PageFrame } from "../shared/PageFrame";
 import type { ApiError, Incident, Panel } from "../shared/types";
 import { Skeleton } from "../shared/Skeleton";
-import { card, primaryButton } from "../shared/ui";
+import { card, outlineButton, primaryButton } from "../shared/ui";
 import { IncidentCard } from "./IncidentCard";
 import { PanelTotals } from "./PanelTotals";
 import { TodayClock } from "./TodayClock";
@@ -19,6 +19,11 @@ export default function PanelPage(_props: { token?: string }) {
   const session = useSession();
   const { search } = useLocation();
   const [data, setData] = useState<Panel | null>(null);
+  // Pages loaded with "Ver más" after the first one, which comes inside /me.
+  const [more, setMore] = useState<Incident[]>([]);
+  const [nextPage, setNextPage] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [openError, setOpenError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +42,12 @@ export default function PanelPage(_props: { token?: string }) {
     }
     let alive = true;
     loadMe(sessionToken)
-      .then((panel) => alive && setData(panel))
+      .then((panel) => {
+        if (!alive) return;
+        setData(panel);
+        setMore([]);
+        setNextPage(pageOf(panel.pagination?.next ?? null));
+      })
       .catch((err) => {
         if (!alive) return;
         if (err instanceof ExpedienteError && err.status === 401) {
@@ -50,6 +60,25 @@ export default function PanelPage(_props: { token?: string }) {
       alive = false;
     };
   }, [sessionToken, attempt]);
+
+  const showMore = async () => {
+    if (!sessionToken || !nextPage || loadingMore) return;
+    setLoadingMore(true);
+    setMoreError(false);
+    try {
+      const page = await loadIncidents(sessionToken, nextPage);
+      // A scene that arrived meanwhile shifts the pages by one: never show the same card twice.
+      setMore((prev) => {
+        const seen = new Set([...(data?.incidents ?? []), ...prev].map((i) => i.id));
+        return [...prev, ...page.results.filter((i) => !seen.has(i.id))];
+      });
+      setNextPage(pageOf(page.next));
+    } catch {
+      setMoreError(true); // a 401 already signed the member out, and the effect sends them to /entrar
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const open = useCallback(
     async (incident: Incident, to: "expediente" | "evento") => {
@@ -91,7 +120,8 @@ export default function PanelPage(_props: { token?: string }) {
     );
   }
 
-  const { member, ong, totals, incidents } = data;
+  const { member, ong, totals } = data;
+  const incidents = [...data.incidents, ...more];
   return (
     <PageFrame width="wide" status={<span className="text-muted">{ong.name}</span>}>
       {welcome && (
@@ -133,13 +163,30 @@ export default function PanelPage(_props: { token?: string }) {
 
       <h2 className="mt-10 text-lg font-bold">Detecciones</h2>
       {incidents.length ? (
-        <ul className="mt-3 grid gap-4 lg:grid-cols-2">
-          {incidents.map((incident) => (
-            <li key={incident.id} className="min-w-0">
-              <IncidentCard incident={incident} onOpen={open} busy={busy} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-3 grid gap-4 lg:grid-cols-2">
+            {incidents.map((incident) => (
+              <li key={incident.id} className="min-w-0">
+                <IncidentCard incident={incident} onOpen={open} busy={busy} />
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-col items-center gap-2 text-sm text-muted">
+            <p aria-live="polite">
+              Mostrando {incidents.length} de {Math.max(totals.incidents, incidents.length)} detecciones
+            </p>
+            {moreError && (
+              <p role="alert" className="text-rojo-3">
+                No pudimos cargar más detecciones. Inténtalo otra vez.
+              </p>
+            )}
+            {nextPage && (
+              <button type="button" onClick={() => void showMore()} disabled={loadingMore} className={outlineButton}>
+                {loadingMore ? "Cargando…" : "Ver más detecciones"}
+              </button>
+            )}
+          </div>
+        </>
       ) : (
         <p className="mt-3 rounded-3xl bg-panel p-6 text-muted ring-1 ring-line">
           Todavía no hay detecciones en los ríos de tu ONG. Te avisaremos por WhatsApp apenas aparezca una.
