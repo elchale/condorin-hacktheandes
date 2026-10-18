@@ -21,8 +21,8 @@ curl -X POST "$URL/procesar" -H "Authorization: Bearer $(gcloud auth print-ident
   -H 'Content-Type: application/json' -d '{"prefix": "yaguas/2026-10-18"}'
 ```
 
-Or **Actions → Procesar imágenes → Run workflow**. The trigger answers 404 if the prefix has no objects,
-202 with the execution name otherwise. Re-running a prefix is always safe (backend dedupe by
+Or **Actions → Procesar imágenes → Run workflow**. The trigger answers 404 if the prefix has no images,
+202 with the execution name, the image count and the number of tasks otherwise (see "Large prefixes"). Re-running a prefix is always safe (backend dedupe by
 `Idempotency-Key`; crops are write-once).
 
 Without the trigger (operators with Job permissions):
@@ -41,18 +41,27 @@ gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name=
 ```
 
 Each task ends with `done: N reported (M with findings), F failed, of T`, plus `failures_by_reason`,
-`duplicates` and `alerted`. The execution fails (non-zero exit) when any image failed.
+`duplicates`, `alerted`, `gsd_unchecked` and `report`. The execution fails (non-zero exit) when any image
+failed.
+
+Every task also writes a report with each image it did not report and why:
+
+```bash
+gcloud storage cat "gs://river-images/reports/<execution>/task-*.json" | jq '.not_reported[]'
+```
 
 ## A run failed
 
-Look up `failures_by_reason` in the `done:` log line, then the per-image `image not reported` lines
-(`jsonPayload.status` holds the reason, `jsonPayload.image_uri` the scene).
+Read the execution's report (above), or `failures_by_reason` in the `done:` log line and the per-image
+`image not reported` lines (`jsonPayload.status` holds the reason, `jsonPayload.image_uri` the scene).
 
 | Reason | Action |
 |---|---|
 | `no_river`, `no_captured_at` | fix the object path/name or add custom metadata, then re-run the prefix |
 | `no_bounds` | add `bounds` custom metadata (or bounds in the name); these scenes **have findings** |
-| `rejected_qc` | check the file (truncated, too small, mostly blank); replace it if the provider can |
+| `rejected_qc` | check the file (truncated, too small, mostly blank, GSD mismatch); replace it if the provider can |
+| `bad_gsd_m` | fix the `gsd_m` custom metadata (metres per pixel) |
+| `not_started` | the task ran out of time: re-run the prefix (done images are skipped as duplicates) and raise the task count |
 | `backend_401` / `backend_403` | the SA is not in the backend allowlist: `UPDATE_BACKEND=1 deploy/gcp-setup.sh` |
 | `backend_4xx` (other) | payload refused: read `jsonPayload.response` and raise it with the backend team |
 | `backend_5xx`, `backend_unreachable`, `storage` | transient: re-run the prefix |
@@ -60,12 +69,16 @@ Look up `failures_by_reason` in the `done:` log line, then the per-image `image 
 
 ## Large prefixes
 
-A task has a 1 h timeout (`--task-timeout` in `deploy/gcp-setup.sh`). Split big runs across tasks; each
-task takes every N-th image:
+A task has a 1 h timeout (`--task-timeout` in `deploy/gcp-setup.sh`) and stops starting images 5 min before
+it (`TASK_BUDGET_S`). The trigger counts the images under the prefix and runs ceil(images /
+`IMAGES_PER_TASK`) tasks, at most `MAX_TASKS` (defaults 200 and 10); each task takes every N-th image.
+Set `IMAGES_PER_TASK` from `scripts/benchmark.py` once the real model is deployed:
 
 ```bash
-gcloud run jobs update condorin-detector --region us-central1 --tasks 4
+gcloud run services update condorin-detector-trigger --region us-central1 --update-env-vars IMAGES_PER_TASK=150
 ```
+
+A single run can also ask for a task count: `-d '{"prefix": "yaguas/", "tasks": 8}'` (at most `MAX_TASKS`).
 
 ## Deploying a new model
 

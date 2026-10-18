@@ -1,17 +1,21 @@
 """Cloud Run Job: process every image under `gs://<INPUT_BUCKET>/<PREFIX>` and report each one.
 
-Per image: read its generation and metadata → read that exact version → QC → detect → keep the
-positive class above `min_confidence` → upload one crop per box → POST to the backend.
+Per image: read its generation and metadata → read that exact version → QC (with the scene's GSD
+when its metadata has `gsd_m`) → detect → keep the positive class above `min_confidence` → upload one
+crop per box → POST to the backend.
 Every readable image is reported, also with `"detections": []` (the backend stores it as "reviewed,
 nothing found"). An image is *not* reported, and counts as failed, when posting it would be wrong:
 QC rejected it, metadata the backend requires is missing, or it has findings but no bounds to put
 them on the map (an empty report would hide them).
 
-Work is split across the Job's tasks by `CLOUD_RUN_TASK_INDEX` / `CLOUD_RUN_TASK_COUNT`.
+Work is split across the Job's tasks by `CLOUD_RUN_TASK_INDEX` / `CLOUD_RUN_TASK_COUNT`. A task
+stops starting images when its time budget would be exceeded, and writes a JSON report of every image
+it did not report (`<bucket>/reports/<execution>/task-NNN.json`).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -33,6 +37,7 @@ from condorin.job.report import DeliveryError, Reporter
 
 log = logging.getLogger(__name__)
 
+STARTED = time.monotonic()  # process start: the task timeout runs from container start
 MAX_DETECTIONS = 500  # backend limit per image
 _SLUG = re.compile(r"^[-a-zA-Z0-9_]+$")
 
@@ -54,10 +59,17 @@ class Summary:
     duplicates: int = 0
     alerted: int = 0
     failed: int = 0
+    gsd_unchecked: int = 0  # the card expects a GSD but the scene's metadata has no gsd_m
     failures: Counter = field(default_factory=Counter)
+    not_reported: list[dict] = field(default_factory=list)  # {"object", "reason", "detail"}
+
+    def fail(self, obj: str, reason: str, detail: str = "") -> None:
+        self.failed += 1
+        self.failures[reason] += 1
+        self.not_reported.append({"object": obj, "reason": reason, "detail": detail[:500]})
 
     def as_fields(self) -> dict:
-        d = {k: v for k, v in self.__dict__.items() if k != "failures"}
+        d = {k: v for k, v in self.__dict__.items() if k not in ("failures", "not_reported")}
         return {**d, "failures_by_reason": dict(self.failures)}
 
 
@@ -89,6 +101,20 @@ def list_images(settings: JobSettings, prefix: str) -> list[str]:
     ]  # fmt: skip
 
 
+def gsd_from_metadata(metadata: dict) -> float | None:
+    """Ground sample distance (m/px) from the object's custom metadata `gsd_m`, if present."""
+    raw = (metadata or {}).get("gsd_m")
+    if raw in (None, ""):
+        return None
+    try:
+        gsd = float(raw)
+    except (TypeError, ValueError):
+        raise SkipImage("bad_gsd_m", f"custom metadata gsd_m={raw!r} is not a number") from None
+    if not 0 < gsd < 1000:
+        raise SkipImage("bad_gsd_m", f"custom metadata gsd_m={raw!r} is out of range")
+    return gsd
+
+
 def crop_png(image_bgr: np.ndarray, xyxy: tuple[float, ...], pad: int, min_side: int) -> bytes:
     """The box plus `pad` px on each side, at least `min_side` px wide and tall, clamped to the image."""
     h, w = image_bgr.shape[:2]
@@ -112,6 +138,7 @@ class Runner:
         self.card = card
         self.detector = detector
         self.reporter = reporter
+        self.gsd_unchecked = 0
 
     @property
     def min_confidence(self) -> float:
@@ -123,31 +150,42 @@ class Runner:
         stem = PurePosixPath(obj).with_suffix("")
         return f"{self.settings.crops_prefix.strip('/')}/{stem}/{generation}/{self.card.version}/{i:03d}.png"
 
-    def run(self, objects: list[str]) -> Summary:
+    def run(self, objects: list[str], deadline: float | None = None) -> Summary:
+        """Process `objects` in order. With `deadline` (a time.monotonic() value), stop before an
+        image that would likely end after it; the rest are recorded as `not_started`."""
         summary = Summary(listed=len(objects))
         root = bucket_root(self.settings)
-        for obj in objects:
+        slowest = 0.0
+        for i, obj in enumerate(objects):
+            if deadline is not None and time.monotonic() + slowest > deadline:
+                rest = objects[i:]
+                for o in rest:
+                    summary.fail(o, "not_started", "task time budget reached")
+                log.warning("time budget reached, images left for a re-run",
+                            extra={"model_version": self.card.version, "fields": {
+                                "not_started": len(rest), "first": rest[0]}})  # fmt: skip
+                break
             t0 = time.monotonic()
             ctx = {"image_uri": storage.join(root, obj), "model_version": self.card.version}
             try:
                 answer, n = self.process(obj)
             except SkipImage as err:
-                summary.failed += 1
-                summary.failures[err.reason] += 1
+                summary.fail(obj, err.reason, str(err))
                 log.warning("image not reported", extra={**ctx, "status": err.reason,
                                                          "error": str(err)})  # fmt: skip
                 continue
             except DeliveryError as err:
-                summary.failed += 1
-                summary.failures[f"backend_{err.status or 'unreachable'}"] += 1
+                summary.fail(obj, f"backend_{err.status or 'unreachable'}", str(err))
                 log.error("backend rejected the report", extra={**ctx, "http_status": err.status,
                           "error": str(err), "fields": {"response": err.body}})  # fmt: skip
                 continue
             except storage.StorageError as err:
-                summary.failed += 1
-                summary.failures["storage"] += 1
+                summary.fail(obj, "storage", f"{type(err).__name__}: {err}")
                 log.error("storage error", extra={**ctx, "error": f"{type(err).__name__}: {err}"})
                 continue
+            finally:
+                slowest = max(slowest, time.monotonic() - t0)
+                summary.gsd_unchecked = self.gsd_unchecked
             summary.processed += 1
             if n:
                 summary.with_findings += 1
@@ -178,7 +216,12 @@ class Runner:
                             "set custom metadata captured_at or name it <YYYY-MM-DD>T<HHMM>Z_...")  # fmt: skip
         satellite = meta["satellite"] or self.settings.default_satellite
 
-        qc = run_qc(raw, self.card.qc)
+        gsd_m = gsd_from_metadata(info.metadata)
+        if gsd_m is None and self.card.qc.expected_gsd_m:
+            self.gsd_unchecked += (
+                1  # the model is resolution-sensitive but this scene's GSD is unknown
+            )
+        qc = run_qc(raw, self.card.qc, gsd_m=gsd_m)
         if not qc.passed:
             raise SkipImage("rejected_qc", ",".join(map(str, qc.reasons)))
 
@@ -220,6 +263,38 @@ class Runner:
             "detections": detections,
         }
         return self.reporter.post(payload, idempotency_key(bucket, obj, generation)), len(found)
+
+
+def write_report(
+    settings: JobSettings, card: ModelCard, prefix: str, index: int, count: int, summary: Summary
+) -> str | None:
+    """Write `<bucket>/<reports_prefix>/<execution>/task-NNN.json` (create-only). Returns its URI."""
+    if not settings.reports_prefix.strip("/"):
+        return None
+    execution = os.environ.get("CLOUD_RUN_EXECUTION") or time.strftime(
+        "local-%Y%m%dT%H%M%SZ", time.gmtime()
+    )
+    uri = storage.join(bucket_root(settings), settings.reports_prefix.strip("/"), execution,
+                       f"task-{index:03d}.json")  # fmt: skip
+    report = {
+        "execution": execution,
+        "task_index": index,
+        "task_count": count,
+        "prefix": prefix,
+        "bucket": settings.input_bucket,
+        "model": {"name": card.name, "version": card.version},
+        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "summary": summary.as_fields(),
+        "not_reported": summary.not_reported,
+    }
+    data = json.dumps(report, ensure_ascii=False, indent=2).encode()
+    try:
+        storage.write_once(uri, data, "application/json")
+    except storage.StorageError as err:
+        log.error("could not write the run report", extra={"error": f"{type(err).__name__}: {err}",
+                                                          "fields": {"report": uri}})  # fmt: skip
+        return None
+    return uri
 
 
 def warn_runtime_drift(card: ModelCard) -> list[str]:
@@ -284,12 +359,18 @@ def main() -> int:
         "images_this_task": len(mine), "task_index": index, "task_count": count,
         "device": detector.device, "webhook_mode": settings.webhook_mode}})  # fmt: skip
 
-    summary = Runner(settings, card, detector, Reporter(settings)).run(mine)
+    # The budget counts from process start, so model loading is included, like the task timeout.
+    deadline = STARTED + settings.task_budget_s
+    summary = Runner(settings, card, detector, Reporter(settings)).run(mine, deadline)
+    report = write_report(settings, card, prefix, index, count, summary)
+    if summary.gsd_unchecked:
+        log.warning(f"{summary.gsd_unchecked} scenes had no gsd_m metadata: GSD check skipped",
+                    extra={"model_version": card.version})  # fmt: skip
     log.info(
         f"done: {summary.processed} reported ({summary.with_findings} with findings), "
         f"{summary.failed} failed, of {summary.listed}",
         extra={"model_version": card.version, "fields": {"prefix": prefix, "task_index": index,
-                                                          **summary.as_fields()}},
+                                                          "report": report, **summary.as_fields()}},
     )  # fmt: skip
     # A non-zero exit marks the execution as failed in the console; re-running is safe.
     return 1 if summary.failed else 0

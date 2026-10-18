@@ -277,3 +277,104 @@ def test_main_end_to_end_fake_model(monkeypatch, tmp_path, capsys):
     done = lines[-1]
     assert done["message"].startswith("done: 3 reported")
     assert done["processed"] == 3 and done["failed"] == 0 and done["listed"] == 3
+
+
+# --- time budget, run report, GSD ---------------------------------------------------------------
+
+
+def test_budget_stops_before_the_deadline(tmp_path, card):
+    names = [f"yaguas/2026-10-18T06{i}0Z_s1.jpeg" for i in range(3)]
+    for n in names:
+        put(tmp_path, n)
+    r, rep = runner(card, tmp_path, [])
+    summary = r.run(names, deadline=0.0)  # already past: nothing starts
+    assert rep.sent == [] and summary.failures == {"not_started": 3}
+    assert [x["object"] for x in summary.not_reported] == names
+    summary = r.run(names, deadline=float("inf"))
+    assert summary.processed == 3 and summary.failed == 0
+
+
+def test_budget_leaves_room_for_the_slowest_image(tmp_path, card, monkeypatch):
+    names = [f"yaguas/2026-10-18T06{i}0Z_s1.jpeg" for i in range(3)]
+    for n in names:
+        put(tmp_path, n)
+    clock = {"t": 0.0}
+    monkeypatch.setattr("condorin.job.runner.time.monotonic", lambda: clock["t"])
+    r, rep = runner(card, tmp_path, [])
+    real = r.process
+
+    def slow(obj):
+        clock["t"] += 40.0  # every image takes 40 s
+        return real(obj)
+
+    r.process = slow
+    summary = r.run(names, deadline=100.0)  # 2 images fit (80 s); a 3rd would end at 120 s
+    assert summary.processed == 2 and summary.failures == {"not_started": 1}
+    assert summary.not_reported == [
+        {"object": names[2], "reason": "not_started", "detail": "task time budget reached"}
+    ]
+
+
+def test_not_reported_lists_every_failure(tmp_path, card):
+    put(tmp_path, SCENE)
+    put(tmp_path, "flat.jpeg")
+    r, _ = runner(card, tmp_path, [VESSEL])
+    summary = r.run([SCENE, "flat.jpeg"])
+    assert {(x["object"], x["reason"]) for x in summary.not_reported} == {
+        (SCENE, "no_bounds"), ("flat.jpeg", "no_river")}  # fmt: skip
+    assert "not_reported" not in summary.as_fields()
+
+
+def test_main_writes_the_run_report(monkeypatch, tmp_path, capsys):
+    put(tmp_path, "yaguas/2026-10-18T0600Z_s1.jpeg", {"bounds": BOUNDS})
+    bad = tmp_path / "yaguas/2026-10-18T0610Z_s1.jpeg"
+    bad.write_bytes(b"not an image")
+    monkeypatch.setenv("INPUT_BUCKET", str(tmp_path))
+    monkeypatch.setenv("PREFIX", "yaguas/2026-10-18")
+    monkeypatch.setenv("FAKE_MODEL", "1")
+    monkeypatch.setenv("WEBHOOK_MODE", "log")
+    monkeypatch.setenv("CLOUD_RUN_EXECUTION", "condorin-detector-abc")
+    assert main() == 1
+    report_path = tmp_path / "reports/condorin-detector-abc/task-000.json"
+    report = json.loads(report_path.read_text())
+    assert (
+        report["execution"] == "condorin-detector-abc" and report["prefix"] == "yaguas/2026-10-18"
+    )
+    assert report["summary"]["processed"] == 1 and report["summary"]["failed"] == 1
+    assert report["not_reported"][0]["object"] == "yaguas/2026-10-18T0610Z_s1.jpeg"
+    assert report["not_reported"][0]["reason"] == "rejected_qc"
+    done = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert done["report"] == str(report_path)
+    # reports/ is never listed as input
+    assert list_images(settings_for(tmp_path), "") == [
+        "yaguas/2026-10-18T0600Z_s1.jpeg", "yaguas/2026-10-18T0610Z_s1.jpeg"]  # fmt: skip
+
+
+def test_report_can_be_turned_off(monkeypatch, tmp_path):
+    put(tmp_path, "yaguas/2026-10-18T0600Z_s1.jpeg", {"bounds": BOUNDS})
+    for k, v in {"INPUT_BUCKET": str(tmp_path), "PREFIX": "yaguas/", "FAKE_MODEL": "1",
+                 "WEBHOOK_MODE": "log", "REPORTS_PREFIX": ""}.items():  # fmt: skip
+        monkeypatch.setenv(k, v)
+    assert main() == 0 and not (tmp_path / "reports").exists()
+
+
+def test_gsd_from_metadata_reaches_qc(tmp_path, card):
+    strict = card.model_copy(update={"qc": card.qc.model_copy(update={"expected_gsd_m": 0.5})})
+    put(tmp_path, "yaguas/2026-10-18T0600Z_s1.jpeg", {"gsd_m": "0.5"})
+    put(tmp_path, "yaguas/2026-10-18T0610Z_s1.jpeg", {"gsd_m": 3.0})
+    put(tmp_path, "yaguas/2026-10-18T0620Z_s1.jpeg", {"gsd_m": "half a metre"})
+    put(tmp_path, "yaguas/2026-10-18T0630Z_s1.jpeg")
+    r, rep = runner(strict, tmp_path, [])
+    summary = r.run([f"yaguas/2026-10-18T06{i}0Z_s1.jpeg" for i in range(4)])
+    assert summary.processed == 2  # matching GSD, and unknown GSD (check skipped)
+    assert summary.failures == {"rejected_qc": 1, "bad_gsd_m": 1}
+    mismatch = next(x for x in summary.not_reported if x["reason"] == "rejected_qc")
+    assert "gsd_mismatch" in mismatch["detail"]
+    assert summary.gsd_unchecked == 1
+
+
+def test_gsd_ignored_when_the_card_has_no_expectation(tmp_path, card):
+    put(tmp_path, SCENE, {"gsd_m": 3.0})
+    r, _ = runner(card, tmp_path, [])
+    summary = r.run([SCENE])
+    assert summary.processed == 1 and summary.gsd_unchecked == 0
