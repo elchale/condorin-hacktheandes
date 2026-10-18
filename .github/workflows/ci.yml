@@ -1,0 +1,109 @@
+name: CI
+
+# Runs the checks of every part of the monorepo. Each source repository also runs its own CI and deploy.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (Django, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: condorin
+          POSTGRES_USER: condorin
+          POSTGRES_PASSWORD: condorin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key-not-for-production
+      DATABASE_URL: postgres://condorin:condorin@localhost:5432/condorin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt ruff==0.17.1
+      - run: ruff check .
+      - run: python manage.py check --settings=backend.test_settings
+      - run: python manage.py makemigrations --check --dry-run --settings=backend.test_settings
+      - run: pytest --tb=short -q
+
+  detection:
+    name: detection (YOLO pipeline, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: detection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: detection/pyproject.toml
+      # No torch needed: tests use the fake and stub detectors.
+      - run: pip install -e ".[job,trigger,notifier,dev]" google-cloud-tasks "ruff>=0.5"
+      - run: ruff check .
+      - run: pytest --tb=short -q
+
+  frontend:
+    name: frontend (typecheck, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  data:
+    name: data (layer manifest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every layer in layers.json exists and parses
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          out = pathlib.Path("data/out")
+          manifest = json.loads((out / "layers.json").read_text())
+          for layer in manifest:
+              assert (out / layer["file"]).is_file(), layer["file"]
+          for f in out.glob("*.geojson"):
+              fc = json.loads(f.read_text())
+              assert fc["type"] == "FeatureCollection", f
+              print(f.name, len(fc["features"]), "features")
+          PY

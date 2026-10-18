@@ -1,0 +1,39 @@
+name: Sync subtrees
+
+# Keeps this monorepo in step with the three repositories that deploy each part. Every 10 minutes (GitHub
+# may delay scheduled runs) or by hand it runs scripts/sync-subtrees.sh and pushes any new commits.
+# A push made with GITHUB_TOKEN does not start other workflows, so CI is dispatched explicitly.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-subtrees
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pull every subtree
+        id: pull
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/sync-subtrees.sh
+      - name: Push and run CI
+        if: steps.pull.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin HEAD:main
+          gh workflow run ci.yml --ref main

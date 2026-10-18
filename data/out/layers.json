@@ -1,0 +1,98 @@
+[
+  {
+    "id": "mineria-amw",
+    "file": "mineria-amw.geojson",
+    "title": "Huella minera detectada por satélite (Amazon Mining Watch)",
+    "short": "Huella minera",
+    "source": "Amazon Mining Watch, Earth Genome y Amazon Conservation (modelo 48px v4.10b, Sentinel 2)",
+    "license": "CC BY 4.0",
+    "url": "https://source.coop/earthgenome/amazon-mining-watch",
+    "year": "2018 a 2026 (2025 y 2026 provisionales)",
+    "color": "#f59e0b",
+    "geometry": "Polygon",
+    "features": 9,
+    "bytes_gzip": 153569,
+    "property_labels": {
+      "year": "Año de inicio",
+      "estado": "Estado",
+      "area_ha": "Área de celdas con detección (ha)"
+    }
+  },
+  {
+    "id": "anp-sernanp",
+    "file": "anp-sernanp.geojson",
+    "title": "Áreas naturales protegidas de la Amazonía (SERNANP)",
+    "short": "Áreas protegidas",
+    "source": "SERNANP, Servicio Nacional de Áreas Naturales Protegidas por el Estado",
+    "license": "Datos públicos de SERNANP (servicio de descarga WFS y REST); SERNANP publica sus datos abiertos con ODC BY. Citar la fuente.",
+    "url": "https://geoservicios.sernanp.gob.pe/arcgis/rest/services/base_fisica/peru_sernanp_0102/MapServer",
+    "year": "2026",
+    "color": "#22c55e",
+    "geometry": "Polygon",
+    "features": 58,
+    "bytes_gzip": 47324,
+    "property_labels": {
+      "anp": "Nombre",
+      "categoria": "Categoría",
+      "codigo": "Código",
+      "ubicacion": "Ubicación",
+      "ha": "Superficie legal (ha)"
+    }
+  },
+  {
+    "id": "concesiones-ingemmet",
+    "file": "concesiones-ingemmet.geojson",
+    "title": "Concesiones mineras vigentes y en trámite (INGEMMET)",
+    "short": "Concesiones mineras",
+    "source": "INGEMMET, Catastro Minero (GEOCATMIN), actualizado al 16 de octubre de 2026",
+    "license": "Información pública de INGEMMET (GEOCATMIN, acceso libre); INGEMMET publica sus datos abiertos con ODbL. Citar la fuente.",
+    "url": "https://geocatmin.ingemmet.gob.pe/arcgis/rest/services/SERV_CATASTRO_MINERO_WGS84/MapServer/0",
+    "year": "2026",
+    "color": "#a855f7",
+    "geometry": "Polygon",
+    "features": 6704,
+    "bytes_gzip": 243165,
+    "property_labels": {
+      "concesion": "Concesión",
+      "titular": "Titular (solo personas jurídicas)",
+      "estado": "Estado",
+      "ha": "Hectáreas"
+    }
+  },
+  {
+    "id": "reinfo",
+    "file": "reinfo.geojson",
+    "title": "Mineros en formalización (REINFO, MINEM)",
+    "short": "REINFO",
+    "source": "MINEM, Registro Integral de Formalización Minera, publicado por INGEMMET en GEOCATMIN (corte 26 de febrero de 2025)",
+    "license": "Información pública de MINEM e INGEMMET (GEOCATMIN, acceso libre); INGEMMET publica sus datos abiertos con ODbL. Citar la fuente.",
+    "url": "https://geocatmin.ingemmet.gob.pe/arcgis/rest/services/SERV_REINFO/MapServer/0",
+    "year": "2025",
+    "color": "#fb7185",
+    "geometry": "Point",
+    "features": 21192,
+    "bytes_gzip": 249444,
+    "property_labels": {
+      "estado": "Estado",
+      "actividad": "Actividad",
+      "derecho": "Derecho minero"
+    }
+  },
+  {
+    "id": "peru-amazonia",
+    "file": "peru-amazonia.geojson",
+    "title": "Departamentos amazónicos del Perú",
+    "short": "Amazonía peruana",
+    "source": "geoBoundaries (William & Mary geoLab), Perú ADM1",
+    "license": "Dominio público",
+    "url": "https://www.geoboundaries.org/api/current/gbOpen/PER/ADM1/",
+    "year": "2008",
+    "color": "#334155",
+    "geometry": "Polygon",
+    "features": 5,
+    "bytes_gzip": 7359,
+    "property_labels": {
+      "departamento": "Departamento"
+    }
+  }
+]

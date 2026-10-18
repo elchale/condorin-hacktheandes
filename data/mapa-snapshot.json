@@ -1,0 +1,190 @@
+{
+  "generated_at": "2026-10-18T12:24:57Z",
+  "brand": "Ojo de Cóndor",
+  "bbox": [
+    -71.2012,
+    -13.2,
+    -69.7,
+    -2.5206
+  ],
+  "totals": {
+    "images": 2,
+    "detections": 2,
+    "alerting_detections": 2,
+    "alerts_sent": 12,
+    "alerts_opened": 2,
+    "expedientes": 2,
+    "expedientes_filed": 1,
+    "ongs": 9,
+    "members": 16,
+    "users": 5,
+    "rivers": 2
+  },
+  "rivers": [
+    {
+      "slug": "malinowski",
+      "name": "Malinowski",
+      "basin": "Tambopata",
+      "region": "Madre de Dios",
+      "province": "Tambopata",
+      "district": "Inambari",
+      "protected_area": "",
+      "lat": -12.95,
+      "lon": -69.95,
+      "ongs": 9,
+      "images": 0,
+      "detections": 0,
+      "last_captured_at": null
+    },
+    {
+      "slug": "yaguas",
+      "name": "Yaguas",
+      "basin": "Putumayo",
+      "region": "Loreto",
+      "province": "Putumayo",
+      "district": "Yaguas",
+      "protected_area": "Parque Nacional Yaguas",
+      "lat": -2.7706,
+      "lon": -70.9512,
+      "ongs": 1,
+      "images": 2,
+      "detections": 2,
+      "last_captured_at": "2026-10-18T06:45:00Z"
+    }
+  ],
+  "images": [
+    {
+      "id": 109,
+      "river": "yaguas",
+      "satellite": "SkyFi",
+      "captured_at": "2026-10-18T06:45:00Z",
+      "model": "dredge-detector v0.3",
+      "detections": 1,
+      "alerting": 1,
+      "top_confidence": 0.87,
+      "lat": -2.7706,
+      "lon": -70.9512,
+      "alerts_sent": 6,
+      "expedientes": {
+        "draft": 1,
+        "ready": 0,
+        "filed": 0
+      }
+    },
+    {
+      "id": 108,
+      "river": "yaguas",
+      "satellite": "SkyFi",
+      "captured_at": "2026-10-18T06:39:00Z",
+      "model": "dredge-detector v0.3",
+      "detections": 1,
+      "alerting": 1,
+      "top_confidence": 0.87,
+      "lat": -2.7706,
+      "lon": -70.9512,
+      "alerts_sent": 6,
+      "expedientes": {
+        "draft": 0,
+        "ready": 0,
+        "filed": 1
+      }
+    }
+  ],
+  "detections": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -70.9512,
+            -2.7706
+          ]
+        },
+        "properties": {
+          "id": 115,
+          "image": 109,
+          "river": "yaguas",
+          "confidence": 0.87,
+          "captured_at": "2026-10-18T06:45:00Z",
+          "alerting": true,
+          "satellite": "SkyFi",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -70.9512,
+            -2.7706
+          ]
+        },
+        "properties": {
+          "id": 114,
+          "image": 108,
+          "river": "yaguas",
+          "confidence": 0.87,
+          "captured_at": "2026-10-18T06:39:00Z",
+          "alerting": true,
+          "satellite": "SkyFi",
+          "kind": "draga"
+        }
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "month": "2026-10",
+      "images": 2,
+      "detections": 2
+    }
+  ],
+  "activity": [
+    {
+      "at": "2026-10-18T06:54:02Z",
+      "kind": "expediente_opened",
+      "river": "yaguas",
+      "label": "Una ONG abrió un expediente por el río Yaguas"
+    },
+    {
+      "at": "2026-10-18T06:51:54Z",
+      "kind": "expediente_filed",
+      "river": "yaguas",
+      "label": "Una ONG presentó la denuncia por el río Yaguas"
+    },
+    {
+      "at": "2026-10-18T06:50:02Z",
+      "kind": "expediente_opened",
+      "river": "yaguas",
+      "label": "Una ONG abrió un expediente por el río Yaguas"
+    },
+    {
+      "at": "2026-10-18T06:47:14Z",
+      "kind": "alert",
+      "river": "yaguas",
+      "label": "Alerta enviada a 1 ONG del río Yaguas"
+    },
+    {
+      "at": "2026-10-18T06:45:00Z",
+      "kind": "image",
+      "river": "yaguas",
+      "label": "Nueva escena en el río Yaguas con 1 detección"
+    },
+    {
+      "at": "2026-10-18T06:42:32Z",
+      "kind": "alert",
+      "river": "yaguas",
+      "label": "Alerta enviada a 1 ONG del río Yaguas"
+    },
+    {
+      "at": "2026-10-18T06:39:00Z",
+      "kind": "image",
+      "river": "yaguas",
+      "label": "Nueva escena en el río Yaguas con 1 detección"
+    }
+  ],
+  "mine": null
+}
