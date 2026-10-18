@@ -1,0 +1,36 @@
+name: Refresh feeds
+
+# Keeps GET /api/v1/fuentes fresh without waiting for a visitor: every 30 minutes GitHub calls
+# POST /api/v1/fuentes/refresh, which fetches the stale sources (FIRMS, Sentinel, Open-Meteo, GloFAS)
+# synchronously. Run it by hand with "force" to refetch everything. GitHub may delay or skip
+# scheduled runs; the request path still refreshes stale sources in the background as a fallback.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Refetch every source, even fresh ones"
+        type: boolean
+        default: false
+
+concurrency:
+  group: refresh-feeds
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: POST /api/v1/fuentes/refresh
+        env:
+          PANEL_API_SECRET: ${{ secrets.PANEL_API_SECRET }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: |
+          curl -fsS --retry 2 --retry-all-errors --max-time 280 -X POST \
+            -H "Authorization: Bearer ${PANEL_API_SECRET}" \
+            "https://api.condorin.pe/api/v1/fuentes/refresh?force=${FORCE}"
+          echo

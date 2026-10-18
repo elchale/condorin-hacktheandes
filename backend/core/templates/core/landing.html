@@ -1,0 +1,47 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Ojo de Cóndor API</title>
+  <link rel="icon" type="image/png" href="{% static 'brand/favicon-192x192.png' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;900&display=swap">
+  <style>
+    :root { --marca: #e11d2e; --tinta: #18181b; --gris: #52525b; --borde: #e3e3e8; --fondo: #f3f3f6; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 24px 16px; background: var(--fondo); color: var(--tinta);
+      font-family: Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main {
+      width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--borde);
+      border-radius: 16px; padding: 40px 28px; text-align: center;
+    }
+    img { width: 96px; height: 96px; }
+    h1 { margin: 16px 0 4px; font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
+    p { margin: 0; color: var(--gris); line-height: 1.5; }
+    .estado {
+      display: inline-flex; align-items: center; gap: 8px; margin-top: 24px;
+      font-size: 14px; color: var(--gris);
+    }
+    .estado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; }
+    a.boton {
+      display: block; margin-top: 28px; padding: 14px 20px; border-radius: 10px;
+      background: var(--marca); color: #fff; font-weight: 600; text-decoration: none;
+    }
+    a.boton:hover { background: #c40f20; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="{% static 'brand/logo.png' %}" alt="Ojo de Cóndor" width="96" height="96">
+    <h1>Ojo de Cóndor</h1>
+    <p>Servicio de alertas de minería ilegal en la Amazonía.</p>
+    <span class="estado">En funcionamiento</span>
+    <a class="boton" href="{{ frontend_url }}">Ir a condorin.pe</a>
+  </main>
+</body>
+</html>

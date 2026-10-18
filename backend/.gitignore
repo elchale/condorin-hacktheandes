@@ -1,0 +1,89 @@
+
+# Django #
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media
+
+# Python #
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment #
+venv/
+env/
+ENV/
+.venv/
+
+# Environment variables — committed templates only, never real .env files
+.env
+.env.prod
+.env.local
+.env.docker
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE specific files #
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage #
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Local development #
+.DS_Store
+
+# Extra files
+save_to_self_and_delete_*.txt
+
+# Credential files — GCS service account keys and similar secrets
+service-account-*.json
+credentials*.json
+secrets*.json
+*-key.json
+gcs-*.json
+# GCP project-ID-named key files (e.g. avian-volt-457704-c9-*.json)
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.json
+avian-volt-457704-c9-f9805fbe0e0f.json
+# Claude Code agent pipeline (settings, ADRs, worktrees, local agent state)
+.claude/
+
+# Playwright / test output (not used here, but in case anyone adds e2e)
+playwright-report/
+test-results/
+
+# Editor & build dirs already covered above; keep node_modules out if anyone
+# adds a frontend tool inside this repo by accident.
+node_modules/

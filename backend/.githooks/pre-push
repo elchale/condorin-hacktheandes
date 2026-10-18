@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Never push a red main: CI would skip the deploy and mail a failure. Enable once per clone with
+#   git config core.hooksPath .githooks
+# Checks exactly the commits being pushed (in a temporary worktree), not uncommitted edits.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+py=python
+[ -x "$root/.venv/Scripts/python.exe" ] && py="$root/.venv/Scripts/python.exe"
+[ -x "$root/.venv/bin/python" ] && py="$root/.venv/bin/python"
+zero=0000000000000000000000000000000000000000
+
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue  # deleting a branch
+  tree=$(mktemp -d)
+  git worktree add --quiet --detach "$tree" "$local_sha"
+  # .env is gitignored; the check needs no secrets, but settings read it if present.
+  status=0
+  CHECK_DIR="$tree" CHECK_PYTHON="$py" bash "$root/scripts/check.sh" || status=$?
+  git worktree remove --force "$tree"
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: checks failed on ${local_sha:0:7}; nothing was pushed." >&2
+    exit "$status"
+  fi
+done

@@ -1,0 +1,15 @@
+# Keep secrets and local state out of the image (the Dockerfile copies the whole context).
+.env
+.env.*
+!.env.template
+.git
+.github
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+staticfiles
+db.sqlite3
+*.log

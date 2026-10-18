@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff==0.17.1
+      - run: ruff check .
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: condorin
+          POSTGRES_USER: condorin
+          POSTGRES_PASSWORD: condorin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key-not-for-production
+      DATABASE_URL: postgres://condorin:condorin@localhost:5432/condorin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python manage.py check --settings=backend.test_settings
+      - run: python manage.py makemigrations --check --dry-run --settings=backend.test_settings
+      - run: pytest --tb=short -q
+
+  # Pushes to main that pass lint and tests ship to Cloud Run. GitHub signs in to GCP as the
+  # github-deployer service account, whose JSON key is the GCP_SA_KEY repository secret. Only the
+  # image changes: env vars, secrets, CPU and scaling stay as configured on the service. The
+  # entrypoint runs the migrations.
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [lint, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Never cancel a deploy halfway; a newer push waits for it and deploys after.
+    concurrency:
+      group: deploy-cloud-run
+      cancel-in-progress: false
+    env:
+      IMAGE: us-central1-docker.pkg.dev/wisecai-consultor-prod/cloud-run-source-deploy/condorin-api:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - run: docker build -t "$IMAGE" . && docker push "$IMAGE"
+      - uses: google-github-actions/deploy-cloudrun@v2
+        # A healthy deploy takes about 30 s; a revision that never starts should not hold the job for 12 min.
+        timeout-minutes: 6
+        with:
+          service: condorin-api
+          region: us-central1
+          image: ${{ env.IMAGE }}
+      - run: curl -fsS "$(gcloud run services describe condorin-api --region us-central1 --format='value(status.url)')/healthz/"
+      # When the revision fails, print why (Cloud Run's own conditions), so the log says it without console access.
+      - name: Why the revision failed
+        if: failure()
+        run: |
+          gcloud run services describe condorin-api --region us-central1 --format='yaml(status.conditions,status.latestCreatedRevisionName,status.latestReadyRevisionName)'
+          REV=$(gcloud run services describe condorin-api --region us-central1 --format='value(status.latestCreatedRevisionName)')
+          gcloud run revisions describe "$REV" --region us-central1 --format='yaml(status.conditions)'

@@ -1,0 +1,25 @@
+# Python 3.13
+# Ojo de Cóndor API. Alerts go out on a thread after the webhook commits; there is no task queue.
+
+# Web
+Django==5.2.18
+django-environ==0.14.0
+djangorestframework==3.18.3
+django-cors-headers==4.9.0
+whitenoise==6.12.0
+gunicorn==26.2.0
+
+# Database (Neon Postgres)
+psycopg2-binary==2.9.13
+
+# Google: ID token check on the webhook, evidence metadata and signed links in the buckets
+google-auth==2.62.0
+google-cloud-storage==3.17.1
+requests==2.34.2
+
+# Expediente PDF
+reportlab==5.0.1
+pillow==13.0.0
+
+# Redacción de los hechos con Claude (expedientes/redaccion.py), detrás de EXPEDIENTE_IA_ENABLED
+langchain-anthropic==1.7.6

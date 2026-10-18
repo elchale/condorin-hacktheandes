@@ -1,0 +1,24 @@
+# Runtime dependencies live in requirements.txt (Railway installs from it).
+# The [project] table only exists so PEP 621 tools can read this file.
+[project]
+name = "condorin-backend"
+version = "0.1.0"
+description = "Ojo de Cóndor API: detector webhook, WhatsApp alerts and expedientes de denuncia."
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+extend-exclude = ["migrations", ".venv", "staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Modular settings: star imports are the point, and env.py must load first.
+"backend/settings/__init__.py" = ["F401", "F403"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend", "core", "ongs", "detections", "expedientes"]

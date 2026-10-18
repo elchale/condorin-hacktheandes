@@ -1,0 +1,6 @@
+from django.apps import AppConfig
+
+
+class OngsConfig(AppConfig):
+    name = 'ongs'
+    verbose_name = 'ONGs'

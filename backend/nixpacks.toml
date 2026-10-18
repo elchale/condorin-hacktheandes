@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["bash build_scripts/build.sh"]
+
+[start]
+cmd = "bash build_scripts/start.sh"

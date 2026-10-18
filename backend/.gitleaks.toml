@@ -1,0 +1,11 @@
+[allowlist]
+description = "Template placeholders and test fixtures"
+regexes = [
+    '''ci-secret-key-not-for-production''',
+    '''test-only-secret''',
+    '''test-secret''',
+]
+paths = [
+    ".env.template",
+    ".github/workflows/ci.yml",
+]

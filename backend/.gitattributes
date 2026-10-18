@@ -1,0 +1,22 @@
+# Normalize line endings to LF in the repo. Linux CI runs Ruff and Python
+# parsers that handle CRLF fine, but `docker-entrypoint.sh` MUST be LF or
+# `/bin/sh` fails with `bad interpreter`. Setting eol=lf repo-wide lets
+# Windows contributors keep CRLF in their working tree (via autocrlf)
+# while storage stays LF for everything.
+* text=auto eol=lf
+
+# Shell scripts and Docker entrypoint MUST stay LF on every platform.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Treat known binary formats so git never tries to diff or convert them.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pyc   binary
