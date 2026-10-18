@@ -39,6 +39,7 @@ trigger = [
     "requests>=2.31",
 ]
 dev = [
+    "httpx2>=2.13",  # starlette's TestClient (tests/test_trigger.py)
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
