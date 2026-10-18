@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
     "sync-data": "node scripts/sync-data.mjs",
     "check": "tsc --noEmit && vite build"
   },

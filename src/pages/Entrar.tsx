@@ -4,16 +4,12 @@ import { Brand } from "../components/TopBar";
 import { friendlyError, requestCode, signIn } from "../lib/api";
 import { saveSession } from "../lib/session";
 import { useSession } from "../lib/hooks";
+import { safeNext } from "../lib/safeNext";
 import { formatPhone, normalizePhone } from "../lib/brand";
 import { entrar } from "../features/shared/ui";
 import { Link, navigate, useLocation } from "../router";
 
 const { field, primary, textLink } = entrar;
-
-/** Only same site paths ("/panel", "/expediente/abc"), never "//host" or absolute URLs. */
-function safeNext(next: string | null): string | null {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") && !next.startsWith("/entrar") ? next : null;
-}
 
 export default function Entrar() {
   const { search } = useLocation();
