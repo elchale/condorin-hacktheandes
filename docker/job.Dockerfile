@@ -10,11 +10,15 @@
 ARG PYTHON_IMAGE=python:3.12-slim
 
 FROM ${PYTHON_IMAGE} AS builder
+# Keep in step with the `ml` extra in pyproject.toml and the versions the model was trained with.
+ARG TORCH_VERSION=2.14.1
+ARG TORCHVISION_VERSION=0.29.1
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
-# torch from the PyTorch CPU index, not from pyproject
-RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# torch from the PyTorch CPU index, not from PyPI
+RUN pip install "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+    --index-url https://download.pytorch.org/whl/cpu
 COPY pyproject.toml README.md LICENSE /build/
 COPY src /build/src
 RUN pip install "/build[job,ml]" \

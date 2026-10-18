@@ -7,7 +7,7 @@ MODEL_VERSION ?= fake
 
 install:
 	uv venv .venv --python 3.12
-	uv pip install --python .venv torch torchvision --index-url https://download.pytorch.org/whl/cpu
+	uv pip install --python .venv torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cpu
 	uv pip install --python .venv -e ".[job,ml,trigger,dev]"
 
 test:

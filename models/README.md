@@ -20,7 +20,7 @@ gs://<bucket>/models/<version>/
   "thresholds": {"detect": 0.62, "review_low": 0.25},
   "qc": {"expected_gsd_m": null, "gsd_tolerance": 0.25, "min_side_px": 640,
          "max_nodata_fraction": 0.5, "max_truncated_lost_fraction": 0.2},
-  "training": {"dataset": "<id>", "date": "<iso>"},
+  "training": {"dataset": "<id>", "date": "<iso>", "ultralytics": "8.4.182", "torch": "2.14.1"},
   "metrics": {"val": {}, "test": {}}
 }
 ```
@@ -31,11 +31,15 @@ gs://<bucket>/models/<version>/
   threshold for higher recall (for example a 0.99 target). The card is rejected if `review_low > detect`.
 - `model.name` in the webhook comes from `name` (the Django team expects `dredge-detector`).
 - `inference` must match how the model was evaluated: native-resolution tiles, cross-tile class-aware NMS.
+- `training.ultralytics` / `training.torch`: the versions the model was trained and evaluated with. The Job
+  logs a warning when the image runs different ones. The image pins them in `pyproject.toml` (`ml` extra)
+  and `docker/job.Dockerfile` (`TORCH_VERSION`); change those pins together with the model.
 
-The card is validated by `condorin.core.model_card.ModelCard`; check it locally before publishing:
+Check a model folder before uploading it (CI runs the same check, and refuses to build otherwise):
 
 ```bash
-.venv/bin/python -c "from condorin.core.model_card import load_model_card; print(load_model_card('path/to/dir'))"
+.venv/bin/python scripts/check_model.py path/to/model          # card, weights file, name
+.venv/bin/python scripts/check_model.py path/to/model --load   # + weights' class names == card classes
 ```
 
 ## Publishing a new version
@@ -46,8 +50,10 @@ gcloud storage cp best.pt model_card.json gs://<bucket>/models/$VERSION/
 gh variable set MODEL_GCS_URI --body "gs://<bucket>/models/$VERSION/"   # then push to main (or re-run CI)
 ```
 
-CI copies that folder into `./model`, bakes it into the Job image and tags it
-`condorin-detector:<git sha>-model<version>`, so every Job revision names its exact model. The
+CI copies that folder into `./model`, runs `scripts/check_model.py`, bakes it into the Job image (tagged
+`condorin-detector:<git sha>-model<version>`, so every Job revision names its exact model), and runs the
+image once on a synthetic scene (`scripts/smoke_job_image.sh`, log mode) before pushing and deploying it.
+A model whose class names do not match the card fails there, and the Job refuses to start with it. The
 `version` field is what the backend receives as `model.version`. `github-deployer` needs
 `roles/storage.objectViewer` on `<bucket>`.
 

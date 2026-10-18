@@ -73,6 +73,27 @@ def resolve_device(device: str) -> str:
         return "cpu"
 
 
+class ModelCardMismatch(ValueError):
+    """The weights and model_card.json disagree; serving them would mislabel detections."""
+
+
+def check_class_names(model_names: dict[int, str] | list[str], card: ModelCard) -> None:
+    """`card.classes` must list the model's class names in index order.
+
+    Detections are labelled by index into `card.classes`, so a reordered or shorter list would
+    silently report the wrong class (or crash on the first box)."""
+    names = (
+        [model_names[i] for i in sorted(model_names)]
+        if isinstance(model_names, dict)
+        else list(model_names)
+    )
+    if names != list(card.classes):
+        raise ModelCardMismatch(
+            f"model_card.json classes {card.classes} do not match the weights' class names "
+            f"{names} (same names, same order required)"
+        )
+
+
 class YoloDetector:
     """Ultralytics YOLO with native-resolution sliced inference, exactly as evaluated."""
 
@@ -99,6 +120,7 @@ class YoloDetector:
         if not weights.is_file():
             raise FileNotFoundError(f"model weights not found: {weights}")
         self.model = YOLO(str(weights), task="detect")
+        check_class_names(self.model.names, card)
 
     def detect(self, image_bgr: np.ndarray) -> list[Detection]:
         inf = self.card.inference

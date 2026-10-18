@@ -25,10 +25,12 @@ job = [
     "google-auth>=2.29",
     "requests>=2.31",
 ]
-# Model runtime for the Job. torch comes from the PyTorch CPU wheel index in the Dockerfile.
+# Model runtime for the Job. Pinned to the versions the model is trained and evaluated with; change
+# them together with model_card.json `training.ultralytics` / `training.torch` (see models/README.md).
+# torch itself comes from the PyTorch CPU wheel index (docker/job.Dockerfile pins the same version).
 ml = [
-    "ultralytics>=8.2",
-    "torch",
+    "ultralytics==8.4.182",
+    "torch==2.14.1",
 ]
 # Cloud Run service `condorin-detector-trigger`: no torch, no ultralytics.
 trigger = [
