@@ -104,7 +104,7 @@ export default function Acerca() {
 
       <section className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-4 pb-12 pt-8 sm:px-6 lg:grid-cols-2 lg:items-center lg:gap-14 lg:py-16 [&>*]:min-w-0">
         <div>
-          <p className="label-caps">Centro de operaciones</p>
+          <p className="label-caps">Vigilancia satelital de ríos</p>
           <h1 className="mt-2 text-[2.25rem] font-black leading-[1.05] tracking-tight sm:text-5xl">
             Vigilamos la <span className="text-rojo">minería ilegal</span> en la Amazonía.
           </h1>
