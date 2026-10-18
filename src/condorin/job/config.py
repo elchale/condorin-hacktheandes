@@ -40,6 +40,14 @@ class JobSettings(BaseSettings):
 
     # --- crops (uploaded next to the scenes; the backend's SA can already read river-images) ---
     crops_prefix: str = "crops"
+    # What each detection's crop_uri points to (the backend's WhatsApp alert header and web thumbnails):
+    #   scene_boxed: one JPEG per scene, the whole scene downscaled to scene_max_px with a numbered red
+    #                box on every reported detection (all detections share it);
+    #   crop:        one PNG per detection, the box plus crop_padding_px (at least crop_min_side_px).
+    crop_mode: Literal["scene_boxed", "crop"] = "scene_boxed"
+    scene_max_px: int = Field(
+        1600, ge=320
+    )  # longest side; keeps the JPEG well under WhatsApp's 5 MB
     crop_padding_px: int = 32
     crop_min_side_px: int = 128
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 
+import cv2
+import numpy as np
 import pytest
 import requests
 from conftest import FAKE_TOKEN, encode, make_image
@@ -104,9 +106,66 @@ def test_reports_findings_with_contract_shape(tmp_path, card):
     assert re.fullmatch(r"gs://[^/]+/.+#\d+", d["crop_uri"])
     crop_obj = d["crop_uri"].split("/", 3)[3].split("#")[0]
     assert (
-        crop_obj == f"crops/yaguas/2026-10-18T0645Z_s1/{img['generation']}/{card.version}/000.png"
+        crop_obj == f"crops/yaguas/2026-10-18T0645Z_s1/{img['generation']}/{card.version}/scene.jpg"
     )
     assert (tmp_path / crop_obj).is_file()
+
+
+# --- crop_uri modes -----------------------------------------------------------------------------
+
+VESSEL2 = Detection("mining_vessel", 0.74, (100.0, 900.0, 140.0, 916.0))
+
+
+def test_scene_boxed_is_the_default_and_shared_by_all_detections(tmp_path, card):
+    put(tmp_path, SCENE, {"bounds": BOUNDS})
+    r, rep = runner(card, tmp_path, [VESSEL, VESSEL2])
+    r.run([SCENE])
+    a, b = rep.sent[0][0]["detections"]
+    assert a["crop_uri"] == b["crop_uri"] and a["crop_uri"].split("#")[0].endswith("/scene.jpg")
+    path = tmp_path / a["crop_uri"].split("/", 3)[3].split("#")[0]
+    img = cv2.imdecode(np.frombuffer(path.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
+    assert img.shape[:2] == (1280, 1280)  # whole scene, not zoomed (already under 1600 px)
+    for x1, y1, x2, y2 in (VESSEL.box, VESSEL2.box):  # a red box surrounds each detection
+        ring = img[int(y1) - 9 : int(y2) + 9, int(x1) - 9 : int(x2) + 9]
+        red = (ring[..., 2] > 200) & (ring[..., 1] < 80) & (ring[..., 0] < 80)
+        assert red.sum() > 50
+
+
+def test_scene_boxed_downscales_large_scenes(card):
+    from condorin.job.runner import boxed_scene_jpeg
+
+    big = np.full((2000, 2560, 3), 90, np.uint8)
+    out = cv2.imdecode(np.frombuffer(boxed_scene_jpeg(big, [(1000, 1000, 1040, 1016)], 1600),
+                                     np.uint8), cv2.IMREAD_COLOR)  # fmt: skip
+    assert out.shape[:2] == (1250, 1600)  # longest side 1600, aspect kept
+    red = (out[..., 2] > 200) & (out[..., 1] < 80) & (out[..., 0] < 80)
+    x1, y1, x2, y2 = (round(v * 0.625) for v in (1000, 1000, 1040, 1016))  # box in the 1600 px copy
+    assert red[y1 - 20 : y2 + 20, x1 - 20 : x2 + 20].sum() > 50  # drawn around the scaled box
+    assert red[: y1 - 80].sum() == 0 and red[y2 + 30 :].sum() == 0  # label above, nothing else
+
+
+def test_scene_boxed_is_written_once(tmp_path, card):
+    put(tmp_path, SCENE, {"bounds": BOUNDS})
+    r, rep = runner(card, tmp_path, [VESSEL])
+    r.run([SCENE])
+    r.run([SCENE])
+    first, second = (p["detections"][0]["crop_uri"] for p, _ in rep.sent)
+    assert first == second
+
+
+def test_crop_mode_keeps_close_ups(tmp_path, card):
+    put(tmp_path, SCENE, {"bounds": BOUNDS})
+    r, rep = runner(card, tmp_path, [VESSEL, VESSEL2], crop_mode="crop")
+    r.run([SCENE])
+    uris = [d["crop_uri"].split("#")[0] for d in rep.sent[0][0]["detections"]]
+    assert [u.rsplit("/", 1)[1] for u in uris] == ["000.png", "001.png"]
+
+
+def test_no_scene_image_without_detections(tmp_path, card):
+    put(tmp_path, SCENE)
+    r, _ = runner(card, tmp_path, [])
+    r.run([SCENE])
+    assert not (tmp_path / "crops").exists()
 
 
 def test_reports_empty_scene(tmp_path, card):
