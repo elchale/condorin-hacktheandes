@@ -4,11 +4,10 @@ Django owns the schema and the migrations; Prisma only maps onto these tables (s
 condorin/prisma/schema.prisma). Columns the frontend inserts without a value carry a
 database default (`db_default`) because Prisma does not run Django's Python defaults.
 """
-from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models.functions import Now
 
-phone_validator = RegexValidator(r'^\d{10,15}$', 'Solo dígitos con código de país, por ejemplo 51987654321.')
+from core.phone import phone_validator
 
 
 class Member(models.Model):

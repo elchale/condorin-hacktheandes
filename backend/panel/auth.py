@@ -4,20 +4,24 @@ The Next.js app checks its own session cookie (signed WhatsApp sign in) and forw
 X-Condorin-Phone. The secret never reaches a browser, so the header cannot be forged from outside.
 """
 import hmac
-import re
 
 from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, ValidationError
 
-PHONE_RE = re.compile(r'^\d{10,15}$')
+from core.auth import bearer_token
+from core.phone import PHONE_RE
 
 
 def authenticate_frontend(request) -> None:
-    secret = settings.PANEL_API_SECRET
-    scheme, _, token = request.headers.get('Authorization', '').partition(' ')
-    if scheme.lower() != 'bearer' or not token.strip():
+    authenticate_secret(request, settings.PANEL_API_SECRET)
+
+
+def authenticate_secret(request, secret: str) -> None:
+    """`Authorization: Bearer <secret>`, compared in constant time. An empty secret turns the route off."""
+    token = bearer_token(request)
+    if token is None:
         raise NotAuthenticated('Falta el encabezado Authorization: Bearer.')
-    if not secret or not hmac.compare_digest(token.strip().encode(), secret.encode()):
+    if not secret or not hmac.compare_digest(token.encode(), secret.encode()):
         raise AuthenticationFailed('Credencial inválida.')
 
 

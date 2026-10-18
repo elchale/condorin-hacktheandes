@@ -208,3 +208,10 @@ def test_refresh_due_reports_slow_sources_as_running(settings, monkeypatch):
     gate.set()
     assert out['firms'] == {'status': 'running'}
     assert {out[s]['status'] for s in ('sentinel', 'open-meteo', 'glofas')} == {'ok'}
+
+
+def test_refresh_endpoint_uses_its_own_secret_when_set(client, canned, settings):
+    settings.PANEL_API_SECRET = SECRET
+    settings.FUENTES_REFRESH_SECRET = 'feeds-only-secret'
+    assert post(client, SECRET).status_code == 403  # the panel secret no longer refreshes
+    assert post(client, 'feeds-only-secret').status_code in (200, 502)

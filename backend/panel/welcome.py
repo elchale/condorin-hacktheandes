@@ -9,6 +9,7 @@ import threading
 from django.conf import settings
 
 from core import whatsapp
+from core.middleware import mask_phone
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +44,14 @@ def send_welcome(phone: str) -> None:
     from detections.limits import cap_reached
     if cap_reached():
         # TODO(prod): hackathon cap (detections/limits.py): once it is used up, no WhatsApp goes out at all.
-        logger.warning('panel: hackathon WhatsApp cap reached, no welcome to %s', phone)
+        logger.warning('panel: hackathon WhatsApp cap reached, no welcome to %s', mask_phone(phone))
         return
 
     def run():
         try:
             whatsapp.send_template(phone, settings.WA_WELCOME_TEMPLATE, [])
         except whatsapp.WhatsAppError as exc:
-            logger.warning('panel: welcome to %s failed: %s', phone, exc)
+            logger.warning('panel: welcome to %s failed: %s', mask_phone(phone), exc)
 
     if getattr(settings, 'ALERTS_INLINE', False):
         run()

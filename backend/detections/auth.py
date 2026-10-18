@@ -5,15 +5,16 @@ import logging
 from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 
+from core.auth import bearer_token
+
 logger = logging.getLogger(__name__)
 
 
 def _bearer(request) -> str:
-    header = request.headers.get('Authorization', '')
-    scheme, _, token = header.partition(' ')
-    if scheme.lower() != 'bearer' or not token.strip():
+    token = bearer_token(request)
+    if token is None:
         raise NotAuthenticated('Falta el encabezado Authorization: Bearer.')
-    return token.strip()
+    return token
 
 
 def _valid_secret(token: str) -> bool:

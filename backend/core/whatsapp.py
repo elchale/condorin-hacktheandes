@@ -4,6 +4,8 @@ import logging
 import requests
 from django.conf import settings
 
+from core.middleware import mask_phone
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +26,8 @@ def send_template(phone: str, name: str, components: list[dict]) -> str:
         'template': {'name': name, 'language': {'code': settings.WA_TEMPLATE_LANG}, 'components': components},
     }
     if not settings.WA_SEND_ENABLED:
-        logger.info('whatsapp disabled, would send %s to %s: %s', name, phone, components)
+        # Never the components: the code template carries the sign in code in them.
+        logger.info('whatsapp disabled, would send %s to %s', name, mask_phone(phone))
         return 'dry-run'
 
     try:
@@ -37,12 +40,21 @@ def send_template(phone: str, name: str, components: list[dict]) -> str:
     except requests.RequestException as exc:
         raise WhatsAppError(str(exc)) from exc
 
-    data = res.json() if res.content else {}
+    try:
+        data = res.json() if res.content else {}
+    except ValueError:  # an HTML error page from a proxy, or a truncated body
+        data = {'error': {'message': f'HTTP {res.status_code}, respuesta no JSON de WhatsApp'}}
+    if not isinstance(data, dict):
+        data = {'error': {'message': f'HTTP {res.status_code}, respuesta inesperada de WhatsApp'}}
     if not res.ok:
         error = data.get('error', data)
         logger.error('whatsapp send failed %s %s', res.status_code, error)
         raise WhatsAppError(error.get('message', f'HTTP {res.status_code}') if isinstance(error, dict) else str(error))
-    return data['messages'][0]['id']
+    try:
+        return str(data['messages'][0]['id'])
+    except (KeyError, IndexError, TypeError) as exc:
+        logger.error('whatsapp accepted the message but returned no id: %s', data)
+        raise WhatsAppError('WhatsApp no devolvió el id del mensaje') from exc
 
 
 def text(value: str) -> dict:

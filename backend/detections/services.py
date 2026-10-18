@@ -15,6 +15,8 @@ import threading
 
 from django.conf import settings
 from django.db import IntegrityError, close_old_connections, transaction
+from django.db.models import F, Q
+from django.utils import timezone
 
 from core import clock, gcs, whatsapp
 from expedientes.autodraft import create_drafts
@@ -22,7 +24,7 @@ from ongs.models import Member, River
 from ongs.team import sync_internal_team
 
 from . import limits
-from .models import Alert, Detection, SatelliteImage
+from .models import Alert, Detection, SatelliteImage, sending_stale_before
 from .text import alert_template_components
 
 logger = logging.getLogger(__name__)
@@ -37,8 +39,8 @@ BELOW_THRESHOLD = 'below_threshold'
 NO_RECIPIENTS = 'no_recipients'
 CAPPED = 'capped'  # TODO(prod): hackathon cap, see detections/limits.py
 
-# Serializes the cap check and the send within this process, so two alert threads cannot both take the last slot.
-_send_lock = threading.Lock()
+# What the automatic sends (dispatch, retries, the clock replay) may claim: pending or failed rows.
+RETRIABLE = [Alert.Status.PENDING, Alert.Status.FAILED]
 
 
 def is_recent(image: SatelliteImage) -> bool:
@@ -201,9 +203,8 @@ def process_image(image_id: int) -> None:
         # Retries and late dispatches never message about an old or simulated scene.
         logger.info('detections: image %s is old or simulated, its pending alerts are not sent', image.pk)
         return
-    for alert in image.alerts.filter(status__in=[Alert.Status.PENDING, Alert.Status.FAILED],
-                                     attempts__lt=MAX_ATTEMPTS).select_related('member'):
-        send_alert(alert)
+    for alert in retriable(image.alerts.all()).select_related('member'):
+        send_alert_safely(alert)
     capped = image.alerts.filter(status=Alert.Status.CAPPED).count()
     if capped:
         logger.warning('detections: hackathon cap of %s WhatsApp alerts reached, %s alerts of image %s were not sent',
@@ -246,7 +247,39 @@ def header_image_url(image: SatelliteImage) -> str:
     return settings.WA_ALERT_FALLBACK_IMAGE
 
 
-def send_alert(alert: Alert) -> None:
+def abandoned() -> Q:
+    """Rows a dead process left `sending`."""
+    return Q(status=Alert.Status.SENDING, updated__lt=sending_stale_before())
+
+
+def retriable(alerts):
+    """The alerts an automatic send may still try: pending, failed or abandoned, with attempts left."""
+    return alerts.filter(Q(status__in=RETRIABLE) | abandoned(), attempts__lt=MAX_ATTEMPTS)
+
+
+def send_alert_safely(alert: Alert, **kwargs) -> None:
+    """send_alert for one recipient of a loop: whatever breaks is recorded on that alert, the others still go."""
+    try:
+        send_alert(alert, **kwargs)
+    except Exception as exc:
+        logger.exception('detections: alert %s crashed while sending', alert.pk)
+        record_failure(alert, exc)
+
+
+def record_failure(alert: Alert, exc: Exception) -> None:
+    # Counted as an attempt, so a recipient that always breaks stops being retried after MAX_ATTEMPTS.
+    Alert.objects.filter(pk=alert.pk).exclude(status=Alert.Status.SENT).update(
+        status=Alert.Status.FAILED, error=f'{type(exc).__name__}: {exc}'[:2000],
+        attempts=F('attempts') + 1, updated=timezone.now())
+
+
+def send_alert(alert: Alert, manual: bool = False) -> None:
+    """Sends one alert, by one sender at a time: the row is claimed (`sending`) with one conditional UPDATE, so
+    two threads, instances or a command racing for the same alert never both message the member.
+
+    Automatic sends only claim pending, failed or abandoned rows. `manual` (manage.py send_event) may claim any
+    row not being sent right now, a sent one included when the operator asked to resend.
+    """
     image = alert.image
     best = image.alerting_detections().order_by('-confidence').first()
     if best is None:
@@ -261,17 +294,31 @@ def send_alert(alert: Alert) -> None:
         lat=best.lat,
         lon=best.lon,
     )
-    with _send_lock:
-        if limits.cap_reached():
-            # TODO(prod): hackathon cap. Never retried: send_pending_alerts only picks pending or failed.
-            alert.status, alert.error = Alert.Status.CAPPED, limits.CAPPED_ERROR
-            alert.save(update_fields=['status', 'error', 'updated'])
+    claimable = Q(status__in=RETRIABLE) | abandoned()
+    if manual:
+        claimable = ~Q(status=Alert.Status.SENDING) | abandoned()
+    row = Alert.objects.filter(claimable, pk=alert.pk)
+    with transaction.atomic():
+        # One sender at a time decides on the cap, in every process; claimed rows count as used slots.
+        limits.lock_cap()
+        if limits.cap_reached(include_in_flight=True):
+            # TODO(prod): hackathon cap. Never retried: the automatic sends only claim pending or failed rows.
+            row.exclude(status=Alert.Status.SENT).update(
+                status=Alert.Status.CAPPED, error=limits.CAPPED_ERROR, updated=timezone.now())
+            alert.refresh_from_db()
             return
-        alert.attempts += 1
-        try:
-            alert.wa_message_id = whatsapp.send_template(alert.member.phone, settings.WA_ALERT_TEMPLATE, components)
-        except whatsapp.WhatsAppError as exc:
-            alert.status, alert.error = Alert.Status.FAILED, str(exc)[:2000]
-        else:
-            alert.status, alert.error, alert.sent_at = Alert.Status.SENT, '', clock.now()
-        alert.save(update_fields=['attempts', 'wa_message_id', 'status', 'error', 'sent_at', 'updated'])
+        if row.update(status=Alert.Status.SENDING, updated=timezone.now()) != 1:
+            logger.info('detections: alert %s is already being sent or was sent, skipped', alert.pk)
+            alert.refresh_from_db()
+            return
+
+    done = Alert.objects.filter(pk=alert.pk, status=Alert.Status.SENDING)
+    try:
+        message_id = whatsapp.send_template(alert.member.phone, settings.WA_ALERT_TEMPLATE, components)
+    except whatsapp.WhatsAppError as exc:
+        done.update(status=Alert.Status.FAILED, error=str(exc)[:2000], attempts=F('attempts') + 1,
+                    updated=timezone.now())
+    else:
+        done.update(status=Alert.Status.SENT, error='', wa_message_id=message_id, sent_at=clock.now(),
+                    attempts=F('attempts') + 1, updated=timezone.now())
+    alert.refresh_from_db()

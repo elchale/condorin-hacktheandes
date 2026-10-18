@@ -102,3 +102,23 @@ def test_event_template_second_button_opens_the_event_page(post_detection, paylo
     buttons = next(c for c in alert_template_definition('h')['components'] if c['type'] == 'BUTTONS')['buttons']
     assert [b['text'] for b in buttons] == ['Crear expediente', 'Ver evento']
     assert buttons[1]['url'].endswith('/evento/{{1}}')
+
+
+def test_one_broken_recipient_does_not_stop_the_others(post_detection, payload, ong, monkeypatch):
+    """Anything a send raises is recorded on that alert; the next member still gets theirs."""
+    from core import whatsapp
+
+    delivered = []
+
+    def flaky(phone, name, components):
+        if phone == '51936282808':
+            raise KeyError('messages')  # a bug or a malformed answer, not a WhatsAppError
+        delivered.append(phone)
+        return 'wamid.ok'
+
+    monkeypatch.setattr(whatsapp, 'send_template', flaky)
+    assert post_detection(payload).status_code == 201
+    assert delivered == ['51999888777']
+    broken = Alert.objects.get(member__phone='51936282808')
+    assert broken.status == Alert.Status.FAILED and 'KeyError' in broken.error
+    assert Alert.objects.get(member__phone='51999888777').status == Alert.Status.SENT

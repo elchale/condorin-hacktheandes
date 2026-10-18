@@ -4,11 +4,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _offline(settings, monkeypatch):
-    from django.core.cache import cache
+    from django.core.cache import caches
 
     from core import gcs
 
-    cache.clear()  # throttling counters
+    for alias in ('default', 'local'):
+        caches[alias].clear()  # throttling counters, codes, payload caches
     settings.DETECTIONS_SHARED_SECRET = 'test-secret'
     settings.DETECTIONS_ALLOWED_SERVICE_ACCOUNTS = ['detector@condorin.iam.gserviceaccount.com']
     # The fixture scenes carry fixed October 2026 dates; the tests of the recent window set it themselves.

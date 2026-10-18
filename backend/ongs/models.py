@@ -3,8 +3,8 @@ from django.core.validators import RegexValidator
 from django.db import models
 
 from core.models import BaseModel
+from core.phone import phone_validator
 
-phone_validator = RegexValidator(r'^\d{10,15}$', 'Solo dígitos con código de país, por ejemplo 51987654321.')
 ruc_validator = RegexValidator(r'^\d{11}$', 'El RUC tiene 11 dígitos.')
 dni_validator = RegexValidator(r'^\d{8}$', 'El DNI tiene 8 dígitos.')
 
@@ -77,7 +77,15 @@ class Member(BaseModel):
 
     Only `full_name` and `phone` are needed to get alerts. The rest is asked once,
     in the expediente, and remembered for the next one.
+
+    `role`: a `member` (added by the ONG or the admins) opens, edits and files expedientes. An `observer`
+    (anyone who joined the default ONG by signing in, see panel.services.member_for_phone) sees the panel,
+    the incidents and the alerts, and reads the ONG's expediente without the signer's personal data.
     """
+
+    class Role(models.TextChoices):
+        MEMBER = 'member', 'Miembro'
+        OBSERVER = 'observer', 'Observador'
 
     ong = models.ForeignKey(Ong, on_delete=models.CASCADE, related_name='members')
     full_name = models.CharField('nombre completo', max_length=160)
@@ -87,6 +95,12 @@ class Member(BaseModel):
     position = models.CharField('cargo', max_length=120, blank=True)
     is_legal_representative = models.BooleanField('representante legal', default=False)
     active = models.BooleanField(default=True)
+    # Signed into every SPA session of this phone; "Salir" (POST /api/v1/auth/salir) bumps it, which ends them all.
+    role = models.CharField(
+        'rol', max_length=10, choices=Role.choices, default=Role.MEMBER, db_default=Role.MEMBER,
+        help_text='Observador: ve el panel y las alertas, pero no abre, edita ni envía expedientes.',
+    )
+    session_version = models.PositiveIntegerField('versión de sesión', default=0, db_default=0, editable=False)
 
     class Meta:
         ordering = ['ong', 'full_name']
@@ -97,6 +111,11 @@ class Member(BaseModel):
 
     def __str__(self):
         return f'{self.full_name} ({self.ong})'
+
+    @property
+    def can_act(self) -> bool:
+        """May open, edit and finalize expedientes and record filings (observers only read)."""
+        return self.role == self.Role.MEMBER
 
     @property
     def first_name(self):

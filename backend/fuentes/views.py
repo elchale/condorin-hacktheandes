@@ -5,7 +5,7 @@ FUENTES_CACHE_SECONDS, so a burst of visitors costs one read of the cache table 
 Browsers and CDNs keep it five minutes and may serve it stale for an hour; the ETag (which ignores
 `generated_at`) turns a revalidation into a 304.
 
-POST /api/v1/fuentes/refresh (Bearer PANEL_API_SECRET) refreshes the stale sources synchronously; the
+POST /api/v1/fuentes/refresh (Bearer FUENTES_REFRESH_SECRET, or PANEL_API_SECRET when that is unset) refreshes the stale sources synchronously; the
 refresh-feeds GitHub workflow calls it every 30 minutes.
 """
 import gzip
@@ -14,14 +14,14 @@ import json
 import threading
 
 from django.conf import settings
-from django.core.cache import cache
 from django.http import HttpResponse
 from django.utils.cache import get_conditional_response, patch_vary_headers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.cache import local as cache
 from mapa.middleware import cors
-from panel.auth import authenticate_frontend
+from panel.auth import authenticate_secret
 
 from .services import get_payload, refresh_due
 
@@ -78,7 +78,9 @@ class FuentesRefreshView(APIView):
     throttle_scope = 'panel'
 
     def post(self, request):
-        authenticate_frontend(request)
+        # Its own secret when FUENTES_REFRESH_SECRET is set (so the GitHub workflow never holds the panel secret),
+        # else PANEL_API_SECRET as before.
+        authenticate_secret(request, settings.FUENTES_REFRESH_SECRET or settings.PANEL_API_SECRET)
         force = request.query_params.get('force') in ('1', 'true')
         result = refresh_due(force=force)
         cache.delete(CACHE_KEY)

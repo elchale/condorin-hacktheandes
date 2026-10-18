@@ -91,3 +91,38 @@ def test_claude_is_called_once_per_expediente(client, post_detection, payload, o
     for alert in Alert.objects.select_related('member'):  # two members of the same ONG tap the alert
         assert client.get(f'/api/v1/expedientes/{alert.token}').status_code == 200
     assert len(fake.calls) == 1
+
+
+def _post_without_running_callbacks(client, payload, django_capture_on_commit_callbacks):
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        resp = client.post('/api/v1/detections', payload, content_type='application/json',
+                           HTTP_AUTHORIZATION='Bearer test-secret', HTTP_IDEMPOTENCY_KEY='scene-ia')
+    assert resp.status_code == 201
+    return callbacks
+
+
+@pytest.mark.django_db
+def test_claude_runs_after_the_commit_not_inside_it(client, payload, ong, sent, ia_on, model,
+                                                    django_capture_on_commit_callbacks):
+    from expedientes.models import Expediente
+
+    fake = model(FakeModel(text='1. Hechos redactados por Claude.'))
+    callbacks = _post_without_running_callbacks(client, payload, django_capture_on_commit_callbacks)
+    # Stored with the deterministic draft while the transaction was open; Claude not called yet.
+    assert fake.calls == [] and Expediente.objects.get().facts.startswith('1. El ')
+    for callback in callbacks:
+        callback()
+    assert len(fake.calls) == 1 and Expediente.objects.get().facts == '1. Hechos redactados por Claude.'
+
+
+@pytest.mark.django_db
+def test_an_edit_made_before_claude_answers_wins(client, payload, ong, sent, ia_on, model,
+                                                  django_capture_on_commit_callbacks):
+    from expedientes.models import Expediente
+
+    model(FakeModel(text='1. Hechos redactados por Claude.'))
+    callbacks = _post_without_running_callbacks(client, payload, django_capture_on_commit_callbacks)
+    Expediente.objects.update(facts='Lo que escribió la ONG.')
+    for callback in callbacks:
+        callback()
+    assert Expediente.objects.get().facts == 'Lo que escribió la ONG.'

@@ -79,6 +79,11 @@ def default_expiry():
     return timezone.now() + timedelta(days=settings.ALERT_LINK_DAYS)
 
 
+def sending_stale_before():
+    """An alert still `sending` since before this instant was abandoned and may be claimed again."""
+    return timezone.now() - timedelta(minutes=settings.ALERT_SENDING_STALE_MINUTES)
+
+
 class Alert(BaseModel):
     """The WhatsApp alert one ONG member got about one image.
 
@@ -88,6 +93,9 @@ class Alert(BaseModel):
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pendiente'
+        # Claimed by one sender (thread, instance or command) while WhatsApp answers. A row left here longer
+        # than ALERT_SENDING_STALE_MINUTES (the process died mid send) is picked up again by the retries.
+        SENDING = 'sending', 'Enviando'
         SENT = 'sent', 'Enviada'
         FAILED = 'failed', 'Falló'
         # Opened from the condorin.pe panel by a member who got no WhatsApp alert; never sent.

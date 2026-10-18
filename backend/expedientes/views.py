@@ -2,7 +2,8 @@
 
 GET    /api/v1/expedientes/<token>              open (creates and prefills it on the first tap)
 GET    /api/v1/expedientes/<token>?formato=pdf  the PDF: final once confirmed, BORRADOR before
-PATCH  /api/v1/expedientes/<token>              autosave fields, record filings, reopen
+PATCH  /api/v1/expedientes/<token>              autosave fields, record filings, reopen (filings also need
+                                                Authorization: Bearer <a code session of that member>)
 POST   /api/v1/expedientes/<token>/enviar       {} sends the WhatsApp code; {"code"} finalizes and emails it
 """
 from django.http import HttpResponse
@@ -11,6 +12,8 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.session import VIA_CODE, bearer_session
+from core.exceptions import BaseError
 from core.whatsapp import WhatsAppError
 
 from . import codes, mailer
@@ -18,11 +21,34 @@ from .autodraft import adopt
 from .models import Expediente
 from .pdf import build_pdf
 from .serializers import ExpedienteUpdateSerializer, event_payload, expediente_payload
-from .services import alert_for_token, finalize, missing_fields, open_expediente, update_expediente
+from .services import (
+    alert_for_token,
+    existing_expediente,
+    finalize,
+    missing_fields,
+    open_expediente,
+    require_can_act,
+    update_expediente,
+)
+
+
+class CodeSessionRequired(BaseError):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = ('Para registrar la presentación ante una autoridad, entra con el código que te enviamos '
+                      'por WhatsApp y vuelve a intentarlo.')
+
+
+def require_code_session(request, member) -> None:
+    """Recording a filing says the ONG filed the denuncia: the link alone (forwardable) is not enough, it takes a
+    session opened with a WhatsApp code sent to this same member."""
+    session = bearer_session(request)
+    if session is None or session[1] != VIA_CODE or session[0] != member.phone:
+        raise CodeSessionRequired()
 
 
 def _open(alert):
     """The expediente behind a link; an automatic draft is found, never created twice."""
+    require_can_act(alert.member)
     return adopt(open_expediente(alert), alert.member)
 
 
@@ -31,6 +57,11 @@ class ExpedienteView(APIView):
 
     def get(self, request, token):
         alert = alert_for_token(token)
+        if not alert.member.can_act:
+            # An observer reads the ONG's draft, without the signer's data; the PDF carries it, so it stays closed.
+            if request.query_params.get('formato') == 'pdf':
+                require_can_act(alert.member)
+            return Response(expediente_payload(existing_expediente(alert), alert))
         expediente = _open(alert)
         if request.query_params.get('formato') == 'pdf':
             return _pdf_response(expediente)
@@ -41,6 +72,8 @@ class ExpedienteView(APIView):
         expediente = _open(alert)
         serializer = ExpedienteUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        if serializer.validated_data.get('filings'):
+            require_code_session(request, alert.member)
         expediente = update_expediente(expediente, alert.member, dict(serializer.validated_data))
         return Response(expediente_payload(expediente, alert))
 

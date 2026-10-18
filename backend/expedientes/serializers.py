@@ -64,7 +64,7 @@ def _detection(d) -> dict:
     }
 
 
-def _authority(a: Authority, selected: set, filings: dict) -> dict:
+def _authority(a: Authority, selected: set, filings: dict, viewer) -> dict:
     filing = filings.get(a.pk)
     return {
         'code': a.code,
@@ -81,7 +81,7 @@ def _authority(a: Authority, selected: set, filings: dict) -> dict:
         'filing': filing and {
             'receipt_number': filing.receipt_number,
             'filed_at': filing.filed_at,
-            'filed_by': filing.filed_by.full_name if filing.filed_by else None,
+            'filed_by': person(filing.filed_by, viewer),
         },
     }
 
@@ -123,12 +123,28 @@ def incident_payload(image) -> dict:
     }
 
 
+# Who signs and where the authorities answer: never shown to an observer, who did not write them.
+PERSONAL_FIELDS = ['rep_name', 'rep_dni', 'rep_position', 'notify_email']
+
+
+def person(member, viewer):
+    """Another member's name, or None for an observer viewer."""
+    if member is None or not viewer.can_act:
+        return None
+    return member.full_name
+
+
+def member_block(member) -> dict:
+    return {'name': member.full_name, 'first_name': member.first_name, 'role': member.role,
+            'can_act': member.can_act}
+
+
 def event_payload(alert) -> dict:
     """The event page: the incident and where the ONG's expediente stands, without opening it."""
     member, image = alert.member, alert.image
     expediente = Expediente.objects.filter(image=image, ong=member.ong).first()
     return {
-        'member': {'name': member.full_name, 'first_name': member.first_name},
+        'member': member_block(member),
         'ong': {'name': member.ong.display_name},
         'incident': incident_payload(image),
         'expediente': expediente and {
@@ -136,14 +152,18 @@ def event_payload(alert) -> dict:
             'status_label': status_label(expediente),
             'folio': expediente.folio,
             'missing': len(missing_fields(expediente)) if expediente.status == Expediente.Status.DRAFT else 0,
-            'updated_by': expediente.updated_by.full_name if expediente.updated_by else None,
+            'updated_by': person(expediente.updated_by, member),
         },
     }
 
 
 def expediente_payload(expediente: Expediente, alert) -> dict:
-    """Everything the expediente page needs in one response."""
+    """Everything the expediente page needs in one response. An observer gets it read only: `read_only` true,
+    the signer's data (PERSONAL_FIELDS) blank, no names of other members and no PDF link."""
     image, river, member = expediente.image, expediente.image.river, alert.member
+    fields = {f: getattr(expediente, f) for f in EDITABLE_FIELDS}
+    if not member.can_act:
+        fields.update({f: '' for f in PERSONAL_FIELDS})
     selected = set(expediente.authorities.values_list('pk', flat=True))
     filings = {f.authority_id: f for f in expediente.filings.select_related('filed_by')}
     # The river's authorities first, then any other the ONG may also want to file with.
@@ -152,24 +172,25 @@ def expediente_payload(expediente: Expediente, alert) -> dict:
     pdf_path = reverse('expediente', args=[alert.token]) + '?formato=pdf'
 
     return {
-        'member': {'name': member.full_name, 'first_name': member.first_name, 'phone_hint': phone_hint(member.phone)},
+        'member': {**member_block(member), 'phone_hint': phone_hint(member.phone)},
         'ong': {'name': expediente.ong.display_name},
+        'read_only': not member.can_act,
         'expediente': {
             'id': expediente.pk,
             'folio': expediente.folio,
             'status': expediente.status,
             'status_label': expediente.get_status_display(),
-            **{f: getattr(expediente, f) for f in EDITABLE_FIELDS},
+            **fields,
             'missing': missing_fields(expediente),
-            'created_by': expediente.created_by.full_name if expediente.created_by else None,
-            'updated_by': expediente.updated_by.full_name if expediente.updated_by else None,
+            'created_by': person(expediente.created_by, member),
+            'updated_by': person(expediente.updated_by, member),
             'updated_at': expediente.updated,
             'finalized_at': expediente.finalized_at,
-            'finalized_by': expediente.finalized_by.full_name if expediente.finalized_by else None,
-            'pdf_url': f'https://{settings.DOMAIN}{pdf_path}',
+            'finalized_by': person(expediente.finalized_by, member),
+            'pdf_url': f'https://{settings.DOMAIN}{pdf_path}' if member.can_act else None,
             'pdf_sha256': expediente.pdf_sha256,
             'pdf_gcs_uri': expediente.pdf_gcs_uri,
         },
         'incident': incident_payload(image),
-        'authorities': [_authority(a, selected, filings) for a in offered],
+        'authorities': [_authority(a, selected, filings, member) for a in offered],
     }

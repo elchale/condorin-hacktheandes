@@ -18,6 +18,23 @@ ALERT_MIN_CONFIDENCE = env.float('ALERT_MIN_CONFIDENCE', default=0.5)
 # TODO(prod): while detections/limits.py HACKATHON_ALERT_WINDOW_DAYS is set it overrides this (today or yesterday).
 ALERT_RECENT_DAYS = env.int('ALERT_RECENT_DAYS', default=7)
 
+
+def _optional(name: str, default: str) -> str | None:
+    """The variable as text, or None when it is set to an empty value or 'none' (the limit is off)."""
+    value = env(name, default=default).strip()
+    return None if value.lower() in ('', 'none', 'off') else value
+
+
+# TODO(prod): hackathon limits (detections/limits.py). Set a variable to 'none' to turn that limit off.
+# Only scenes captured today or yesterday (America/Lima calendar days) alert.
+_window = _optional('HACKATHON_ALERT_WINDOW_DAYS', '2')
+HACKATHON_ALERT_WINDOW_DAYS = int(_window) if _window else None
+# Once this many WhatsApp alerts have been sent in total, no further alert goes out.
+_cap = _optional('HACKATHON_MAX_ALERT_MESSAGES', '50')
+HACKATHON_MAX_ALERT_MESSAGES = int(_cap) if _cap else None
+# Only alerts sent from this instant (ISO 8601 with offset) count toward the cap.
+HACKATHON_CAP_SINCE = _optional('HACKATHON_CAP_SINCE', '2026-10-18T07:50:00-05:00')
+
 # WhatsApp Cloud API, Qolca Solutions WABA (same number as the condorin.pe sign in).
 WA_GRAPH_URL = env('WA_GRAPH_URL', default='https://graph.facebook.com/v23.0')
 WA_TOKEN = env('WA_TOKEN', default='')
@@ -45,6 +62,10 @@ GCS_EXPEDIENTES_BUCKET = env('GCS_EXPEDIENTES_BUCKET', default='')
 # Lifetime of the evidence links the frontend shows and the WhatsApp header image.
 GCS_SIGNED_URL_MINUTES = env.int('GCS_SIGNED_URL_MINUTES', default=60)
 
+# An alert claimed for sending (status `sending`) longer ago than this was abandoned by a dead process;
+# the retries (send_pending_alerts, the next dispatch) may claim it again.
+ALERT_SENDING_STALE_MINUTES = env.int('ALERT_SENDING_STALE_MINUTES', default=10)
+
 # Send alerts in the request thread instead of a background thread (tests, one off scripts).
 ALERTS_INLINE = env.bool('ALERTS_INLINE', default=False)
 
@@ -70,6 +91,10 @@ LINK_SIGN_IN_DAYS = env.int('LINK_SIGN_IN_DAYS', default=7)
 # TODO: demo only. Everyone who signs in on condorin.pe joins this ONG (empty: the oldest active ONG).
 # Replace with real ONG invitations before going past the demo.
 DEFAULT_ONG_ID = env.int('DEFAULT_ONG_ID', default=0)
+# The role of someone who joins the default ONG that way: 'member' (full rights, the default for the live demo
+# since 2026-10-18 08:30) or 'observer' (sees the panel and the alerts, never opens or signs an expediente). Admins with a
+# phone always join as 'member'. Members the ONG or the admins add by hand are 'member'.
+DEFAULT_ONG_JOIN_ROLE = env('DEFAULT_ONG_JOIN_ROLE', default='member')
 
 # Redacción asistida de los hechos del expediente con Claude, vía LangChain (expedientes/redaccion.py).
 # Apagada por defecto: enciéndela con EXPEDIENTE_IA_ENABLED=True y una ANTHROPIC_API_KEY.

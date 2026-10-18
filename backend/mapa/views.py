@@ -11,7 +11,6 @@ import json
 import threading
 
 from django.conf import settings
-from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
 from django.utils.cache import get_conditional_response, patch_vary_headers
@@ -19,6 +18,7 @@ from rest_framework.views import APIView
 
 from accounts.session import bearer_phone
 from core import clock
+from core.cache import local as cache
 from ongs.models import Member
 
 from .builder import build_mapa

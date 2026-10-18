@@ -19,11 +19,6 @@ FRONTEND_URL = env('FRONTEND_URL', default='https://condorin.pe').rstrip('/')
 
 ALLOWED_HOSTS = [DOMAIN, 'localhost', '127.0.0.1']
 
-# Railway injects this; allow the public Railway domain when present
-_railway_domain = env('RAILWAY_PUBLIC_DOMAIN', default='')
-if _railway_domain:
-    ALLOWED_HOSTS.append(_railway_domain)
-
 # Other hosts that serve the API, comma separated (e.g. the Cloud Run URL: condorin-api-xxxx.a.run.app).
 _extra_hosts = env.list('EXTRA_ALLOWED_HOSTS', default=[])
 ALLOWED_HOSTS += _extra_hosts
@@ -139,13 +134,29 @@ if DEBUG:
 CORS_EXPOSE_HEADERS = ['x-request-id', 'content-disposition']
 # django-cors-headers' default headers already include authorization and content-type.
 
+# `default` is shared by every instance (a table in the same Postgres, created by core 0002_cache_table): sign in
+# codes, attempt counters and their throttles. `local` is process memory for payload caches, the clock row and
+# the high volume throttles (core/cache.py, core/throttling.py).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+        # Culling at the default 300 rows would drop live resend locks and attempt counters.
+        'OPTIONS': {'MAX_ENTRIES': 50000},
+    },
+    'local': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'condorin-local'},
+}
+
 REST_FRAMEWORK = {
     # No sessions or JWT: callers prove who they are with the link token or the webhook bearer.
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
     'UNAUTHENTICATED_USER': None,
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
-    'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
+    'DEFAULT_THROTTLE_CLASSES': ['core.throttling.ScopedThrottle'],
+    # Cloud Run's front end is the one proxy: it appends the caller's address to X-Forwarded-For, so the client
+    # is the last entry and anything the caller wrote before it is ignored. Behind a load balancer, set 2.
+    'NUM_PROXIES': env.int('NUM_PROXIES', default=1),
     'DEFAULT_THROTTLE_RATES': {
         'expediente': '120/minute',
         'expediente_send': '30/hour',
@@ -155,6 +166,9 @@ REST_FRAMEWORK = {
         'fuentes': '600/minute',
         'auth_code': '10/hour',
         'auth_enter': '30/hour',
+        # Per phone, from any IP (core.throttling.PhoneThrottle), on top of the per IP limits above.
+        'auth_code_phone': '6/hour',
+        'auth_enter_phone': '20/hour',
         'me': '300/minute',
     },
     'EXCEPTION_HANDLER': 'core.exceptions.envelope_exception_handler',
@@ -169,11 +183,17 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = env('SECURE_SSL_REDIRECT', default=True)
     # The health probe comes from inside the platform over plain HTTP.
-    SECURE_REDIRECT_EXEMPT = [r'^healthz/$']
+    SECURE_REDIRECT_EXEMPT = [r'^healthz/$', r'^readyz/$']
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+# Where the Django admin lives. Default 'admin/' (the staff bookmarks); set ADMIN_URL to move it off the
+# path every scanner tries first.
+ADMIN_URL = env('ADMIN_URL', default='admin/').strip('/') + '/'
+# The secret of POST /api/v1/fuentes/refresh (the refresh-feeds workflow). Empty: PANEL_API_SECRET, as before.
+FUENTES_REFRESH_SECRET = env('FUENTES_REFRESH_SECRET', default='')
 
 # How long the anonymous GET /api/v1/mapa payload stays in the process cache.
 MAPA_CACHE_SECONDS = env.int('MAPA_CACHE_SECONDS', default=30)
@@ -184,7 +204,8 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {'plain': {'format': '{levelname} {asctime} {name} {message}', 'style': '{'}},
-    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'}},
+    'filters': {'redact_tokens': {'()': 'core.middleware.RedactTokensFilter'}},
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'plain', 'filters': ['redact_tokens']}},
     'root': {'handlers': ['console'], 'level': env('LOG_LEVEL', default='INFO')},
     'loggers': {
         'django.request': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},

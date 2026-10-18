@@ -15,7 +15,7 @@ Ojo de Cóndor API (api.condorin.pe). Read README.md first. It has the flow, the
 ## Rules
 - Keep the API small. The panel routes serve the member panel on condorin.pe. Time replay is done server side with the clock (`set_today`), not with endpoints.
 - Any new query that lists scenes goes through `clock.visible(queryset)` so the demo day hides later scenes. Every payload keeps the `clock` block.
-- Demo shortcut: everyone who signs in on condorin.pe joins the default ONG (`panel.services.default_ong`, marked TODO). Replace with real invitations after the demo.
+- Demo shortcut: everyone who signs in on condorin.pe joins the default ONG (`panel.services.default_ong`, marked TODO) as a full `member` (`DEFAULT_ONG_JOIN_ROLE`, default `member` since the live demo; `observer` reads, never opens, edits or signs). Replace with real invitations after the demo.
 - No task queue (no Redis or broker). Background work is `transaction.on_commit` plus a thread (`detections.services.dispatch`); retries go through `manage.py send_pending_alerts`.
 - No dashes as punctuation in any copy users see (WhatsApp, PDF, email, landing). Legal names like "307-A" are fine.
 - The repo is public: no secrets, keep `.env.template` and the README current.

@@ -8,17 +8,32 @@ status SENT across the whole database (members and admins alike); None removes t
 from datetime import datetime, time, timedelta
 
 from django.conf import settings
+from django.db import connection
 from django.utils import timezone
 
-from .models import Alert
+from .models import Alert, sending_stale_before
+
+# Any 64 bit number, the same in every instance: the Postgres advisory lock that serializes the cap check.
+CAP_LOCK_ID = 7_301_018_001
+
+
+def _since(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    value = datetime.fromisoformat(text)
+    return value if timezone.is_aware(value) else timezone.make_aware(value)  # naive: Lima time
+
 
 # TODO(prod): remove before real production. Hackathon safety limits requested by Carlos on 2026-10-18.
-# Only scenes captured today or yesterday (America/Lima calendar days) alert.
-HACKATHON_ALERT_WINDOW_DAYS = 2
-# Once this many WhatsApp alerts have been sent in total, no further alert goes out.
-HACKATHON_MAX_ALERT_MESSAGES = 50
+# The values come from the settings (env HACKATHON_ALERT_WINDOW_DAYS, HACKATHON_MAX_ALERT_MESSAGES and
+# HACKATHON_CAP_SINCE; 'none' turns one off), read once at import like the constants they replaced.
+# Only scenes captured today or yesterday (America/Lima calendar days) alert. Default 2.
+HACKATHON_ALERT_WINDOW_DAYS = settings.HACKATHON_ALERT_WINDOW_DAYS
+# Once this many WhatsApp alerts have been sent in total, no further alert goes out. Default 50.
+HACKATHON_MAX_ALERT_MESSAGES = settings.HACKATHON_MAX_ALERT_MESSAGES
 # Only alerts sent from this instant count toward the cap (reset before the live demo). None counts every alert.
-HACKATHON_CAP_SINCE = datetime(2026, 10, 18, 7, 50, tzinfo=timezone.get_fixed_timezone(-300))
+# Default 2026-10-18 07:50 Lima.
+HACKATHON_CAP_SINCE = _since(settings.HACKATHON_CAP_SINCE)
 
 CAPPED_ERROR = f'Límite de {HACKATHON_MAX_ALERT_MESSAGES} mensajes del hackathon alcanzado'
 
@@ -48,6 +63,21 @@ def sent_count() -> int:
     return sent.count()
 
 
-def cap_reached() -> bool:
+def in_flight_count() -> int:
+    """Alerts claimed by a sender right now (status `sending`, not stale): they take a slot of the cap."""
+    return Alert.objects.filter(status=Alert.Status.SENDING, updated__gte=sending_stale_before()).count()
+
+
+def cap_reached(include_in_flight: bool = False) -> bool:
     cap = HACKATHON_MAX_ALERT_MESSAGES
-    return cap is not None and sent_count() >= cap
+    if cap is None:
+        return False
+    return sent_count() + (in_flight_count() if include_in_flight else 0) >= cap
+
+
+def lock_cap() -> None:
+    """Serializes the cap check and the claim across threads, instances and commands until the transaction
+    ends (pg_advisory_xact_lock, which works behind Neon's transaction pooler). Call it in transaction.atomic."""
+    if connection.vendor == 'postgresql':  # the API always runs on Postgres
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT pg_advisory_xact_lock(%s)', [CAP_LOCK_ID])

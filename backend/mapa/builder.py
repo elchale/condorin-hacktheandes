@@ -7,7 +7,7 @@ About eight queries whatever the size of the data: rivers, images, detections, a
 expedientes are each read once as plain values and joined in Python.
 """
 from collections import Counter, defaultdict
-from datetime import UTC, datetime
+from datetime import datetime
 
 from django.conf import settings
 from django.db.models import Count, Max, Min, Q
@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from accounts.models import Member as SiteUser
 from core import clock
+from core.clock import iso
 from detections.models import Alert, Detection, SatelliteImage
 from expedientes.models import Expediente
 from ongs.models import Member, Ong, River
@@ -44,17 +45,17 @@ RIVER_FALLBACK = {
 DEFAULT_BBOX = [-78.5, -14.5, -68.5, -0.5]
 
 
-def iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.astimezone(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
-
-
 def plural(n: int, one: str, many: str) -> str:
     return f'{n} {one if n == 1 else many}'
 
 
-def _round(value: float, places: int = 5) -> float:
+# Public coordinates are rounded to 3 decimals (about 110 m): enough to find the stretch of river on the map,
+# not the exact spot of a dredge for whoever reads an open endpoint. Members get the exact point in the panel,
+# the expediente and the WhatsApp alert.
+PUBLIC_PLACES = 3
+
+
+def _round(value: float, places: int = PUBLIC_PLACES) -> float:
     return round(float(value), places)
 
 

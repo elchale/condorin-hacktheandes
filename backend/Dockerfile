@@ -19,5 +19,6 @@ RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh \
 USER app
 EXPOSE 8000
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# No --access-logfile: core.middleware.AccessLogsMiddleware logs every request with the alert tokens redacted.
 CMD gunicorn backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 \
-    --access-logfile - --error-logfile -
+    --error-logfile -

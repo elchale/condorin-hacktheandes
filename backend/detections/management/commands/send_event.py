@@ -6,7 +6,7 @@ Without --send it only lists who would get it. Members already sent this event a
 from django.core.management.base import BaseCommand, CommandError
 
 from detections.models import Alert, SatelliteImage
-from detections.services import is_simulated, pin_evidence, recipients, send_alert
+from detections.services import is_simulated, pin_evidence, recipients, send_alert_safely
 from ongs.models import Member
 
 
@@ -52,7 +52,7 @@ class Command(BaseCommand):
                 continue
             # A dry run creates nothing: a pending row would be picked up by send_pending_alerts.
             alert = alert or Alert.objects.create(image=image, member=member)
-            send_alert(alert)
+            send_alert_safely(alert, manual=True)
             alert.refresh_from_db()
             self.stdout.write(f'  {alert.status} {label} {alert.error}'.rstrip())
         if not send:

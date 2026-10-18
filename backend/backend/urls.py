@@ -1,8 +1,17 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path
 
-from accounts.views import CodeView, EnterView, LinkEnterView, MeExpedienteView, MeIncidentsView, MeView
-from core.views import healthz, landing
+from accounts.views import (
+    CodeView,
+    EnterView,
+    LinkEnterView,
+    MeExpedienteView,
+    MeIncidentsView,
+    MeView,
+    SignOutView,
+)
+from core.views import healthz, landing, readyz
 from detections.views import DetectionWebhookView
 from expedientes.views import EventoView, ExpedienteSendView, ExpedienteView
 from fuentes.views import FuentesRefreshView, FuentesView
@@ -15,7 +24,8 @@ admin.site.site_title = 'Ojo de Cóndor'
 urlpatterns = [
     path('', landing, name='landing'),
     path('healthz/', healthz, name='healthz'),
-    path('admin/', admin.site.urls),
+    path('readyz/', readyz, name='readyz'),
+    path(settings.ADMIN_URL, admin.site.urls),  # 'admin/' unless ADMIN_URL moves it
 
     # The detector posts here (no trailing slash: it posts exactly this path).
     path('api/v1/detections', DetectionWebhookView.as_view(), name='detections'),
@@ -39,6 +49,7 @@ urlpatterns = [
     path('api/v1/auth/codigo', CodeView.as_view(), name='auth-code'),
     path('api/v1/auth/entrar', EnterView.as_view(), name='auth-enter'),
     path('api/v1/auth/enlace', LinkEnterView.as_view(), name='auth-link'),
+    path('api/v1/auth/salir', SignOutView.as_view(), name='auth-logout'),
     path('api/v1/me', MeView.as_view(), name='me'),
     path('api/v1/me/incidentes', MeIncidentsView.as_view(), name='me-incidents'),
     path('api/v1/me/incidentes/<int:image_id>/expediente', MeExpedienteView.as_view(), name='me-expediente'),

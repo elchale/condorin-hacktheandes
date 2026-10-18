@@ -6,7 +6,7 @@ from .models import Member, Ong, River
 class MemberInline(admin.TabularInline):
     model = Member
     extra = 1
-    fields = ['full_name', 'phone', 'position', 'is_legal_representative', 'email', 'dni', 'active']
+    fields = ['full_name', 'phone', 'role', 'position', 'is_legal_representative', 'email', 'dni', 'active']
 
 
 @admin.register(Ong)
@@ -20,8 +20,8 @@ class OngAdmin(admin.ModelAdmin):
 
 @admin.register(Member)
 class MemberAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'ong', 'phone', 'position', 'active']
-    list_filter = ['active', 'ong']
+    list_display = ['full_name', 'ong', 'phone', 'role', 'position', 'active']
+    list_filter = ['active', 'role', 'ong']
     search_fields = ['full_name', 'phone', 'dni']
 
 

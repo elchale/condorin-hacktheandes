@@ -13,10 +13,9 @@ from django.db import transaction
 from detections.models import SatelliteImage
 from ongs.models import Ong
 
-from . import redaccion
 from .drafting import FIELD_OBSERVATIONS, draft_evidence_links, draft_facts, draft_place_reference, draft_risks
 from .models import Expediente
-from .services import default_authorities, signer
+from .services import default_authorities, improve_later, signer
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +51,8 @@ def prefill(image: SatelliteImage, ong: Ong) -> dict:
         'rep_dni': rep.dni if rep else '',
         'rep_position': rep.position if rep else '',
         'rep_phone': rep.phone if rep else '',
-        # Claude polishes the hechos only behind EXPEDIENTE_IA_ENABLED (off by default), as on the link.
-        'facts': redaccion.improve_facts(draft_facts(image), place),
+        # Claude polishes the hechos after the commit, only behind EXPEDIENTE_IA_ENABLED (off by default).
+        'facts': draft_facts(image),
         'place_reference': place,
         'field_observations': FIELD_OBSERVATIONS,
         'field_evidence_links': draft_evidence_links(image),
@@ -76,6 +75,7 @@ def create_drafts(image: SatelliteImage) -> list[Expediente]:
             expediente.authorities.set(default_authorities(image.river))
             created.append(expediente)
     if created:
+        improve_later(created)
         logger.info('expedientes: %s automatic drafts for image %s', len(created), image.pk)
     return created
 

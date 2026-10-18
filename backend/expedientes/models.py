@@ -100,6 +100,10 @@ class Expediente(BaseModel):
     code_member = models.ForeignKey('ongs.Member', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     code_expires_at = models.DateTimeField(null=True, blank=True)
     code_attempts = models.PositiveSmallIntegerField(default=0)
+    # Codes sent in the hour that started at code_sends_since (codes.MAX_SENDS_PER_HOUR), so resending can
+    # reset the attempts only a bounded number of times.
+    code_sends = models.PositiveSmallIntegerField(default=0, db_default=0)
+    code_sends_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'expediente'

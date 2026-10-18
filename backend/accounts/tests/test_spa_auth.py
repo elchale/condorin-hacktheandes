@@ -41,7 +41,8 @@ def test_happy_path(client, ong, sent):
     resp = post(client, '/api/v1/auth/entrar', {'pending': body['pending'], 'code': code})
     assert resp.status_code == 200
     entered = resp.json()
-    assert entered['member'] == {'name': 'María Huamán Ríos', 'phone': '51936282808'}
+    assert entered['member'] == {'name': 'María Huamán Ríos', 'phone': '51936282808', 'role': 'member',
+                                 'can_act': True}
     assert entered['ong'] == {'name': 'Amazonía Viva'}
     user = SiteUser.objects.get(phone='51936282808')
     assert user.consent_at and user.last_sign_in_at
@@ -61,7 +62,12 @@ def test_new_number_joins_the_default_ong(client, ong, sent):
     _, code = code_from(sent)
     resp = post(client, '/api/v1/auth/entrar', {'pending': pending, 'code': code})
     assert resp.status_code == 200
-    assert Member.objects.get(phone='51911222333').ong == ong
+    member = Member.objects.get(phone='51911222333')
+    # The demo default: a full member (DEFAULT_ONG_JOIN_ROLE; 'observer' only reads, see panel/tests/test_observer.py).
+    assert member.ong == ong and member.role == Member.Role.MEMBER
+    assert resp.json()['member'] == {'name': '', 'phone': '51911222333', 'role': 'member', 'can_act': True}
+    me = client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {resp.json()["token"]}').json()
+    assert me['member']['role'] == 'member' and me['member']['can_act'] is True
 
 
 def test_wrong_code_and_attempt_limit(client, ong, sent):
@@ -173,3 +179,33 @@ def test_me_pages_incidents_and_counts_them_all(client, ong, sent, post_detectio
 
     assert client.get('/api/v1/me/incidentes?page=9', **bearer).status_code == 404
     assert client.get('/api/v1/me/incidentes').status_code == 401
+
+
+def test_sign_out_ends_every_session_of_the_phone(client, ong):
+    laptop, phone = session.session_token('51936282808'), session.session_token('51936282808', 'link')
+    other = session.session_token('51999888777')
+    assert client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {laptop}').status_code == 200
+
+    resp = client.post('/api/v1/auth/salir', HTTP_AUTHORIZATION=f'Bearer {laptop}')
+    assert resp.status_code == 200 and resp.json() == {'signed_out': True}
+    for token in (laptop, phone):
+        me = client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {token}')
+        assert me.status_code == 401 and me.json()['type'] == 'session_invalid'
+    assert client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {other}').status_code == 200  # another phone
+
+    # Signing in again issues a token of the new version.
+    fresh = session.session_token('51936282808')
+    assert client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {fresh}').status_code == 200
+
+
+def test_sign_out_without_a_session_is_harmless(client, ong):
+    assert client.post('/api/v1/auth/salir').json() == {'signed_out': True}
+    assert client.post('/api/v1/auth/salir', HTTP_AUTHORIZATION='Bearer nonsense').status_code == 200
+
+
+def test_tokens_from_before_versions_still_work(client, ong):
+    """Sessions signed before session_version existed carry no `v`: they count as version 0."""
+    old = signing.TimestampSigner(salt=session.SESSION_SALT).sign_object({'p': '51936282808', 'via': 'code'})
+    assert client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {old}').status_code == 200
+    client.post('/api/v1/auth/salir', HTTP_AUTHORIZATION=f'Bearer {old}')
+    assert client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {old}').status_code == 401

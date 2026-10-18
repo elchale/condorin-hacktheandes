@@ -43,8 +43,14 @@ def url(alert, suffix=''):
     return f'/api/v1/expedientes/{alert.token}{suffix}'
 
 
-def patch(client, alert, data):
-    return client.patch(url(alert), json.dumps(data), content_type='application/json')
+def patch(client, alert, data, **headers):
+    return client.patch(url(alert), json.dumps(data), content_type='application/json', **headers)
+
+
+def code_session(phone, via='code'):
+    from accounts.session import session_token
+
+    return {'HTTP_AUTHORIZATION': f'Bearer {session_token(phone, via)}'}
 
 
 def send(client, alert, data=None):
@@ -223,13 +229,14 @@ def test_draft_pdf_preview(client, maria):
 
 def test_filing_receipt_locks_the_expediente(client, maria, fixed_code):
     patch(client, maria, COMPLETE)
-    early = patch(client, maria, {'filings': [{'authority': 'fema', 'receipt_number': 'X', 'filed_at': '2026-10-18'}]})
+    early = patch(client, maria, {'filings': [{'authority': 'fema', 'receipt_number': 'X', 'filed_at': '2026-10-18'}]},
+                  **code_session(maria.member.phone))
     assert early.status_code == 400
 
     finalize(client, maria, fixed_code)
     resp = patch(client, maria, {'filings': [
         {'authority': 'fema', 'receipt_number': 'MP-2026-000123', 'filed_at': '2026-10-18'},
-    ]})
+    ]}, **code_session(maria.member.phone))
     assert resp.json()['expediente']['status'] == 'filed'
     fema = next(a for a in resp.json()['authorities'] if a['code'] == 'fema')
     assert fema['filing']['receipt_number'] == 'MP-2026-000123'
@@ -262,3 +269,84 @@ def test_event_page_does_not_open_the_expediente(client, maria):
 
 def test_event_page_unknown_token(client, db):
     assert client.get('/api/v1/eventos/nope').status_code == 404
+
+
+def test_attempts_are_counted_in_the_database_not_on_a_stale_copy(client, maria, fixed_code):
+    """Parallel guesses each load the row once; the limit holds because every attempt is a conditional UPDATE."""
+    patch(client, maria, COMPLETE)
+    send(client, maria)
+    stale = Expediente.objects.get()  # what every parallel request loaded before guessing
+    member = Alert.objects.select_related('member').get(pk=maria.pk).member
+    for _ in range(codes.MAX_ATTEMPTS):
+        with pytest.raises(codes.CodeInvalid):
+            codes.check_code(stale, member, '000000')
+    with pytest.raises(codes.CodeExpired):
+        codes.check_code(stale, member, fixed_code)
+    assert Expediente.objects.get().code_attempts == codes.MAX_ATTEMPTS
+
+
+def test_a_code_is_used_once(client, maria, fixed_code):
+    patch(client, maria, COMPLETE)
+    send(client, maria)
+    first, second = Expediente.objects.get(), Expediente.objects.get()
+    member = Alert.objects.select_related('member').get(pk=maria.pk).member
+    codes.check_code(first, member, fixed_code)
+    with pytest.raises(codes.CodeExpired):
+        codes.check_code(second, member, fixed_code)
+
+
+def test_new_codes_are_capped_per_hour(client, maria, sent):
+    patch(client, maria, COMPLETE)
+
+    def wait_past_resend():
+        Expediente.objects.update(code_expires_at=timezone.now() + timedelta(minutes=codes.CODE_MINUTES)
+                                  - timedelta(seconds=codes.RESEND_SECONDS + 1))
+
+    for _ in range(codes.MAX_SENDS_PER_HOUR):
+        assert send(client, maria).status_code == 202
+        wait_past_resend()
+    limited = send(client, maria)
+    assert limited.status_code == 429 and limited.json()['type'] == 'code_limit'
+    assert len(sent) - 2 == codes.MAX_SENDS_PER_HOUR  # the two alerts, then one code per allowed request
+
+    Expediente.objects.update(code_sends_since=timezone.now() - timedelta(hours=1, minutes=1))
+    assert send(client, maria).status_code == 202
+
+
+def test_failed_code_send_can_be_retried_at_once(client, maria, monkeypatch):
+    from core import whatsapp
+
+    patch(client, maria, COMPLETE)
+
+    calls = []
+
+    def down_once(phone, code):
+        calls.append(phone)
+        if len(calls) == 1:
+            raise whatsapp.WhatsAppError('Meta down')
+        return 'wamid.code'
+
+    monkeypatch.setattr(whatsapp, 'send_code', down_once)
+    assert send(client, maria).json()['type'] == 'whatsapp_error'
+    assert Expediente.objects.get().code_hash == ''
+    assert send(client, maria).status_code == 202  # no 45 s wait after a code that never left
+
+
+@pytest.mark.parametrize('headers', [
+    {},                                                           # the link alone
+    'link',                                                       # a session opened from the WhatsApp link
+    'other',                                                      # a code session of someone else
+    {'HTTP_AUTHORIZATION': 'Bearer forged'},
+])
+def test_recording_a_filing_needs_a_code_session_of_that_member(client, maria, fixed_code, headers):
+    finalize(client, maria, fixed_code)
+    if headers == 'link':
+        headers = code_session(maria.member.phone, 'link')
+    elif headers == 'other':
+        headers = code_session('51999888777')
+    filing = {'filings': [{'authority': 'fema', 'receipt_number': 'MP-1', 'filed_at': '2026-10-18'}]}
+    resp = patch(client, maria, filing, **headers)
+    assert resp.status_code == 403 and resp.json()['type'] == 'code_session_required'
+    assert Expediente.objects.get().status == Expediente.Status.READY
+    # Other edits keep working with the link alone.
+    assert patch(client, maria, {'reopen': True}).status_code == 200

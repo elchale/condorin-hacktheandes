@@ -10,12 +10,13 @@ from core import clock
 from core.geo import coord
 from detections.models import Alert, SatelliteImage
 from detections.text import fecha_larga
+from expedientes.autodraft import status_label
 from expedientes.codes import phone_hint
 from expedientes.models import Authority, Expediente
 from expedientes.services import default_authorities, missing_fields
 from ongs.models import Ong
 
-from .services import crop_url, status_label
+from .services import crop_url
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -222,7 +223,7 @@ def _alerts(skip, alerts) -> dict:
     whatsapp = [a for a in alerts if a.status != Alert.Status.PANEL]
     sent = [a for a in whatsapp if a.status == Alert.Status.SENT]
     failed = sum(a.status == Alert.Status.FAILED for a in whatsapp)
-    queued = sum(a.status == Alert.Status.PENDING for a in whatsapp)
+    queued = sum(a.status in (Alert.Status.PENDING, Alert.Status.SENDING) for a in whatsapp)
     if sent:
         detail = f'{len(sent)} {"alerta enviada" if len(sent) == 1 else "alertas enviadas"} por WhatsApp'
         if failed:

@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from core import clock
 from core.geo import coord, maps_url, utm
 from detections.text import fecha_larga
+from expedientes.autodraft import status_label
 from expedientes.drafting import place_sentence
 
 from .activity import activity_feed, parse_limit
@@ -26,7 +27,6 @@ from .services import (
     missing_count,
     open_from_panel,
     sign_in_by_link,
-    status_label,
 )
 
 # How many crops of one scene the panel card shows.
@@ -48,7 +48,7 @@ class FrontendView(APIView):
         authenticate_frontend(request)
 
 
-def _incident(image, detections, expediente) -> dict:
+def _incident(image, detections, expediente, viewer=None) -> dict:
     best = detections[0]
     lat, lon = coord(best.lat), coord(best.lon)
     return {
@@ -74,7 +74,9 @@ def _incident(image, detections, expediente) -> dict:
             'reviewed': expediente.updated_by_id is not None,
             'folio': expediente.folio,
             'updated_at': expediente.updated,
-            'updated_by': expediente.updated_by.full_name if expediente.updated_by else None,
+            # An observer sees that someone is working on it, never who.
+            'updated_by': expediente.updated_by.full_name if expediente.updated_by and (
+                viewer is None or viewer.can_act) else None,
             'missing': missing_count(expediente) if expediente.status == expediente.Status.DRAFT else 0,
             'authorities': [a.name for a in expediente.authorities.all()],
             'filings': len(expediente.filings.all()),
@@ -82,8 +84,8 @@ def _incident(image, detections, expediente) -> dict:
     }
 
 
-def incident_rows(rows) -> list[dict]:
-    return [_incident(*row) for row in rows]
+def incident_rows(rows, viewer=None) -> list[dict]:
+    return [_incident(*row, viewer=viewer) for row in rows]
 
 
 def panel_payload(member, joined: bool, rows=None) -> dict:
@@ -95,7 +97,8 @@ def panel_payload(member, joined: bool, rows=None) -> dict:
     ong = member.ong
     return {
         'clock': clock.payload(),
-        'member': {'name': member.full_name, 'phone': member.phone, 'joined_now': joined},
+        'member': {'name': member.full_name, 'phone': member.phone, 'joined_now': joined, 'role': member.role,
+                   'can_act': member.can_act},
         'ong': {
             'name': ong.display_name,
             'rivers': [{'slug': r.slug, 'name': r.name, 'protected_area': r.protected_area}
@@ -103,7 +106,7 @@ def panel_payload(member, joined: bool, rows=None) -> dict:
             'members': ong.members.filter(active=True).count(),
         },
         'totals': incident_totals(ong),
-        'incidents': incident_rows(incidents(ong) if rows is None else rows),
+        'incidents': incident_rows(incidents(ong) if rows is None else rows, member),
     }
 
 

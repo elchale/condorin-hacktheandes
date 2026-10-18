@@ -7,6 +7,7 @@ GET   /api/v1/me?page=N                           Bearer → the GET /api/v1/pan
                                                   plus {"pagination": {"count", "next", "previous"}}
 GET   /api/v1/me/incidentes?page=N                Bearer → {"count", "next", "previous", "results"} ("Ver más")
 POST  /api/v1/me/incidentes/<id>/expediente       Bearer → {"token"} (the member's expediente link)
+POST  /api/v1/auth/salir                          Bearer → {"signed_out": true}; ends every session of that phone
 
 Browsers call these directly (the static SPA at condorin.pe and the map). A `link` session reads the panel
 and opens expedientes like any other, but finalizing a denuncia still needs the WhatsApp code sent to
@@ -28,6 +29,8 @@ from rest_framework.views import APIView
 
 from core import whatsapp
 from core.exceptions import BaseError
+from core.middleware import mask_phone
+from core.throttling import PhoneThrottle, ScopedThrottle
 from expedientes.codes import MAX_ATTEMPTS, RESEND_SECONDS, CodeExpired, CodeInvalid, CodeTooSoon
 from panel.services import incident_images, member_for_phone, open_from_panel, sign_in_by_link, with_expedientes
 from panel.views import IncidentPagination, incident_rows, panel_payload
@@ -37,11 +40,13 @@ from .session import (
     CODE_SECONDS,
     VIA_CODE,
     VIA_LINK,
+    bearer_session,
     code_digest,
     normalize_phone,
     pending_value,
     read_pending,
     require_session,
+    revoke_sessions,
     session_token,
 )
 
@@ -72,6 +77,11 @@ def record_sign_in(phone: str) -> bool:
 
 class CodeView(APIView):
     throttle_scope = 'auth_code'
+    phone_throttle_scope = 'auth_code_phone'
+    throttle_classes = [ScopedThrottle, PhoneThrottle]
+
+    def throttle_phone(self, request):
+        return normalize_phone(request.data.get('phone'))
 
     def post(self, request):
         phone = normalize_phone(request.data.get('phone'))
@@ -88,7 +98,7 @@ class CodeView(APIView):
             whatsapp.send_code(phone, code)
         except whatsapp.WhatsAppError as exc:
             cache.delete(lock)
-            logger.warning('sign in code to %s failed: %s', phone[-3:], exc)
+            logger.warning('sign in code to %s failed: %s', mask_phone(phone), exc)
             raise WhatsappError() from exc
         return Response({'phone': phone, 'pending': pending_value(phone, code), 'expires_in': CODE_SECONDS},
                         status=status.HTTP_202_ACCEPTED)
@@ -96,6 +106,14 @@ class CodeView(APIView):
 
 class EnterView(APIView):
     throttle_scope = 'auth_enter'
+    phone_throttle_scope = 'auth_enter_phone'
+    throttle_classes = [ScopedThrottle, PhoneThrottle]
+
+    def throttle_phone(self, request):
+        try:
+            return read_pending(str(request.data.get('pending', '')).strip())['p']
+        except signing.BadSignature:  # the view answers it; a forged value spends only the IP budget
+            return None
 
     def post(self, request):
         pending = str(request.data.get('pending', '')).strip()
@@ -145,9 +163,21 @@ def _signed_in(member, via: str) -> dict:
     return {
         'token': session_token(member.phone, via),
         'via': via,
-        'member': {'name': member.full_name, 'phone': member.phone},
+        'member': {'name': member.full_name, 'phone': member.phone, 'role': member.role, 'can_act': member.can_act},
         'ong': {'name': member.ong.display_name},
     }
+
+
+class SignOutView(APIView):
+    """Ends every session of the signed in phone (all devices). Idempotent: without a valid session it only
+    answers the same, so the SPA can always clear its own copy."""
+    throttle_scope = 'me'
+
+    def post(self, request):
+        session = bearer_session(request)
+        if session is not None:
+            revoke_sessions(session[0])
+        return Response({'signed_out': True})
 
 
 class MeView(APIView):
@@ -174,7 +204,7 @@ class MeIncidentsView(APIView):
         member, _ = member_for_phone(require_session(request))
         paginator = IncidentPagination()
         page = paginator.paginate_queryset(incident_images(member.ong), request, view=self)
-        return paginator.get_paginated_response(incident_rows(with_expedientes(member.ong, page)))
+        return paginator.get_paginated_response(incident_rows(with_expedientes(member.ong, page), member))
 
 
 class MeExpedienteView(APIView):

@@ -48,6 +48,7 @@ def test_lists_the_ong_incidents(client, scene):
     body = call(client, 'get', '/api/v1/panel').json()
     assert body['member']['name'] == 'María Huamán Ríos'
     assert body['member']['joined_now'] is False
+    assert body['member']['role'] == 'member' and body['member']['can_act'] is True  # added by the ONG
     assert body['ong']['name'] == 'Amazonía Viva'
     assert body['totals'] == {'incidents': 1, 'without_expediente': 0, 'draft': 1, 'ready': 0, 'filed': 0}
     incident = body['incidents'][0]
@@ -60,10 +61,11 @@ def test_lists_the_ong_incidents(client, scene):
 
 def test_new_person_joins_the_default_ong(client, scene):
     body = call(client, 'get', '/api/v1/panel', phone='51911222333').json()
-    assert body['member'] == {'name': '', 'phone': '51911222333', 'joined_now': True}
-    assert body['totals']['incidents'] == 1
+    assert body['member'] == {'name': '', 'phone': '51911222333', 'joined_now': True, 'role': 'member',
+                              'can_act': True}
+    assert body['totals']['incidents'] == 1 and body['incidents'][0]['id'] == scene.pk  # sees the panel
     member = Member.objects.get(phone='51911222333')
-    assert member.ong.name == 'Asociación Amazonía Viva'
+    assert member.ong.name == 'Asociación Amazonía Viva' and member.role == Member.Role.MEMBER
     assert call(client, 'get', '/api/v1/panel', phone='51911222333').json()['member']['joined_now'] is False
 
 
@@ -79,7 +81,7 @@ def test_deactivated_member_is_not_rejoined(client, ong):
     assert call(client, 'get', '/api/v1/panel', phone='51999888777').status_code == 403
 
 
-def test_open_expediente_from_panel(client, scene):
+def test_open_expediente_from_panel(client, scene, settings):
     newcomer = '51911222333'
     call(client, 'get', '/api/v1/panel', phone=newcomer)
     res = call(client, 'post', f'/api/v1/panel/incidentes/{scene.pk}/expediente', phone=newcomer)
@@ -137,7 +139,7 @@ def test_link_sign_in_needs_the_secret(client, scene):
 @pytest.mark.parametrize('change', [
     {'status': Alert.Status.PANEL},
     {'status': Alert.Status.FAILED},
-    {'sent_at': timezone.now() - timedelta(days=8)},
+    {'created': timezone.now() - timedelta(days=8)},
     {'expires_at': timezone.now() - timedelta(minutes=1)},
 ])
 def test_link_sign_in_refused(client, scene, change):
@@ -164,3 +166,21 @@ def test_new_member_gets_only_the_welcome(client, scene, sent, settings, django_
     with django_capture_on_commit_callbacks(execute=True):
         call(client, 'get', '/api/v1/panel', phone='51911222333')
     assert len(sent) == before
+
+
+@pytest.mark.parametrize('demo_day', ['2026-07-10', '2027-03-01'])
+def test_link_sign_in_window_runs_on_the_real_clock(client, scene, demo_day):
+    """The demo clock moves sent_at, not the security window: a fresh link signs in whatever the day shows."""
+    from core import clock
+
+    alert = Alert.objects.get(member__phone='51936282808')
+    clock.set_demo(demo_day)
+    try:
+        Alert.objects.filter(pk=alert.pk).update(sent_at=clock.now())
+        res = call(client, 'post', '/api/v1/panel/enlace', phone=None, data={'token': alert.token})
+        assert res.status_code == 200
+        Alert.objects.filter(pk=alert.pk).update(created=timezone.now() - timedelta(days=8))
+        res = call(client, 'post', '/api/v1/panel/enlace', phone=None, data={'token': alert.token})
+        assert res.status_code == 404
+    finally:
+        clock.set_demo(None)

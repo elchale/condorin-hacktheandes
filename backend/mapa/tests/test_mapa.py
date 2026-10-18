@@ -46,7 +46,8 @@ def test_payload_shape(client, scene):
     assert image['expedientes'] == {'draft': 1, 'ready': 0, 'filed': 0}
     features = body['detections']['features']
     assert [f['properties']['alerting'] for f in features] == [True, False]
-    assert features[0]['geometry'] == {'type': 'Point', 'coordinates': [-70.9512, -2.7706]}
+    # Rounded to 3 decimals (about 110 m) on the public map; the panel keeps the exact point.
+    assert features[0]['geometry'] == {'type': 'Point', 'coordinates': [-70.951, -2.771]}
     assert features[0]['properties']['kind'] == 'draga'
     minlon, minlat, maxlon, maxlat = body['bbox']
     assert minlon < -70.96 < maxlon and minlat < -2.78 < maxlat
@@ -139,4 +140,5 @@ def test_export_command_prints_the_same_payload(client, scene):
     printed = json.loads(out.getvalue())
     served = client.get('/api/v1/mapa').json()
     printed.pop('generated_at'), served.pop('generated_at')
+    printed['clock'].pop('now'), served['clock'].pop('now')  # ticks between the two calls
     assert printed == served

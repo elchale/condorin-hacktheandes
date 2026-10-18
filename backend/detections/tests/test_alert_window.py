@@ -208,3 +208,13 @@ def test_alerts_sent_before_the_cap_reset_do_not_count(river):
     assert limits.cap_reached()
     Alert.objects.update(sent_at=limits.HACKATHON_CAP_SINCE - timedelta(minutes=1))
     assert limits.sent_count() == 0 and not limits.cap_reached()
+
+
+def test_hackathon_limits_come_from_the_settings_with_the_old_values(settings):
+    from datetime import datetime
+
+    assert settings.HACKATHON_ALERT_WINDOW_DAYS == 2  # the module value is patched off in conftest
+    assert limits.HACKATHON_MAX_ALERT_MESSAGES == 50
+    assert limits.HACKATHON_CAP_SINCE == datetime(2026, 10, 18, 7, 50, tzinfo=timezone.get_fixed_timezone(-300))
+    assert limits._since('2026-10-18T07:50:00') == limits.HACKATHON_CAP_SINCE  # naive means Lima
+    assert limits._since(None) is None

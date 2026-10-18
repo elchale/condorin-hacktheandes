@@ -8,7 +8,8 @@ Then syncs the hidden internal ONG (ongs.team) that holds the admins as alert re
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Admin, phone_validator
+from accounts.models import Admin
+from core.phone import phone_validator
 from ongs.team import sync_internal_team
 
 

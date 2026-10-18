@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
+from core.clock import iso
 from fuentes.http import Meter, get_json
 from fuentes.rivers import river_points
 
@@ -52,10 +53,6 @@ def next_in_orbit(orbit_passes: list[dict], now: datetime) -> list[tuple[datetim
             out.append((at, platform_name(rotation[k % len(rotation)])))
         k += 1
     return out
-
-
-def iso(value: datetime | None) -> str | None:
-    return value.strftime('%Y-%m-%dT%H:%M:%SZ') if value else None
 
 
 def _parse_time(text: str) -> datetime:

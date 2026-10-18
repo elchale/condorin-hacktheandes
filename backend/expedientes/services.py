@@ -28,6 +28,18 @@ class ExpedienteLocked(BaseError):
     default_detail = 'El expediente ya fue presentado y no se puede modificar.'
 
 
+class ObserverRestricted(BaseError):
+    status_code = 403
+    default_detail = ('Tu cuenta es de observador: puedes ver el panel, las alertas y el expediente de tu ONG, '
+                      'pero no abrirlo, editarlo ni enviarlo. Pide a tu ONG que te agregue como miembro.')
+
+
+def require_can_act(member) -> None:
+    """Observers (members who joined the default ONG on their own) only read."""
+    if not member.can_act:
+        raise ObserverRestricted()
+
+
 # What has to be filled in before the expediente can be finalized, with the message the frontend shows.
 REQUIRED = {
     'ong_name': 'Escribe la razón social de la ONG.',
@@ -93,16 +105,65 @@ def notify_opened(alert_id: int) -> None:
     threading.Thread(target=run_in_thread, daemon=True, name=f'opened-{alert_id}').start()
 
 
-@transaction.atomic
-def open_expediente(alert: Alert) -> Expediente:
-    """The ONG's expediente for this image; created and prefilled on the first tap."""
+def mark_opened(alert: Alert) -> None:
+    """The first tap on the alert: recorded once, and the admins are emailed after the commit."""
     if alert.opened_at is None:
         alert.opened_at = clock.now()
         alert.save(update_fields=['opened_at', 'updated'])
         transaction.on_commit(lambda: notify_opened(alert.pk))
 
+
+def existing_expediente(alert: Alert) -> Expediente:
+    """What an observer may read: the ONG's expediente for the image if one exists (every scene gets an automatic
+    draft at ingest). Never creates or adopts one."""
+    with transaction.atomic():
+        mark_opened(alert)
+    expediente = Expediente.objects.filter(image=alert.image, ong=alert.member.ong).first()
+    if expediente is None:
+        raise ObserverRestricted()
+    return expediente
+
+
+def improve_later(expedientes: list[Expediente]) -> None:
+    """Once the transaction commits, rewrite the hechos of these new expedientes through Claude, on a thread (inline
+    when ALERTS_INLINE). The call can take tens of seconds, so it never runs inside a transaction holding row
+    locks. Only facts still equal to the deterministic draft are replaced: an edit made meanwhile wins."""
+    if not expedientes or not redaccion.enabled():
+        return
+    # What was drafted now: the rewrite applies only while the row still holds exactly this text.
+    drafts = [(e.pk, e.facts, e.place_reference) for e in expedientes]
+    expediente_ids = [pk for pk, _, _ in drafts]
+
+    def run():
+        for pk, draft, place in drafts:
+            text = redaccion.improve_facts(draft, place)
+            if text != draft:
+                Expediente.objects.filter(pk=pk, facts=draft).update(facts=text)
+
+    def run_in_thread():
+        try:
+            run()
+        except Exception:
+            logger.exception('expedientes %s: improving the hechos crashed', expediente_ids)
+        finally:
+            close_old_connections()
+
+    def start():
+        if getattr(settings, 'ALERTS_INLINE', False):
+            run()
+            return
+        threading.Thread(target=run_in_thread, daemon=True, name=f'hechos-{expediente_ids[0]}').start()
+
+    transaction.on_commit(start)
+
+
+@transaction.atomic
+def open_expediente(alert: Alert) -> Expediente:
+    """The ONG's expediente for this image; created and prefilled on the first tap."""
+    mark_opened(alert)
+
     member, ong, image = alert.member, alert.member.ong, alert.image
-    # Drafting (and the Claude call behind it) only runs when the expediente does not exist yet.
+    # Drafting only runs when the expediente does not exist yet; Claude rewrites it after the commit.
     expediente = Expediente.objects.select_for_update().filter(image=image, ong=ong).first()
     if expediente is not None:
         return expediente
@@ -119,7 +180,7 @@ def open_expediente(alert: Alert) -> Expediente:
             'rep_dni': rep.dni,
             'rep_position': rep.position,
             'rep_phone': rep.phone,
-            'facts': redaccion.improve_facts(draft_facts(image), place),
+            'facts': draft_facts(image),
             'place_reference': place,
             'field_observations': FIELD_OBSERVATIONS,
             'field_evidence_links': draft_evidence_links(image),
@@ -131,6 +192,7 @@ def open_expediente(alert: Alert) -> Expediente:
     )
     if created:
         expediente.authorities.set(default_authorities(image.river))
+        improve_later([expediente])
         logger.info('expediente %s opened by member %s', expediente.pk, member.pk)
     return expediente
 

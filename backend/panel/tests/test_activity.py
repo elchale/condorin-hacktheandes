@@ -2,7 +2,7 @@ import pytest
 
 from detections.models import Alert
 from expedientes import codes
-from expedientes.tests.test_expediente import finalize, patch
+from expedientes.tests.test_expediente import code_session, finalize, patch
 
 from .test_panel import SECRET, call
 
@@ -109,7 +109,8 @@ def test_expediente_draft_then_confirmed(client, post_detection, payload, ong, s
     assert step['detail'].startswith(f'{expediente["folio"]} confirmado con código de WhatsApp, para ')
     assert states(event)['filed'] == 'pending'
 
-    patch(client, maria, {'filings': [{'authority': 'fema', 'receipt_number': '123', 'filed_at': '2026-10-18'}]})
+    patch(client, maria, {'filings': [{'authority': 'fema', 'receipt_number': '123', 'filed_at': '2026-10-18'}]},
+          **code_session(maria.member.phone))
     event = feed(client)['events'][0]
     filed = event['steps'][7]
     assert filed == {'key': 'filed', 'label': 'Denuncia presentada', 'state': 'done',

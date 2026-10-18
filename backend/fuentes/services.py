@@ -21,6 +21,7 @@ from django.db import close_old_connections
 from django.db.models import Q
 from django.utils import timezone
 
+from core.clock import iso
 from ongs.models import River
 
 from . import summary
@@ -36,10 +37,6 @@ REFRESH_WAIT_S = 45
 
 _lock = threading.Lock()
 _running: set[str] = set()
-
-
-def _iso(value):
-    return value.strftime('%Y-%m-%dT%H:%M:%SZ') if value else None
 
 
 def is_stale(row: FeedCache | None, now=None) -> bool:
@@ -119,7 +116,7 @@ def _refresh_in_thread(source_id: str, force: bool) -> FeedCache | None:
 def _status(row: FeedCache | None) -> dict:
     if row is None:
         return {'status': 'busy'}
-    return {'status': 'ok' if row.ok else 'failed', 'fetched_at': _iso(row.fetched_at),
+    return {'status': 'ok' if row.ok else 'failed', 'fetched_at': iso(row.fetched_at),
             'duration_ms': row.duration_ms, 'error': row.error or None}
 
 
@@ -136,7 +133,7 @@ def refresh_due(force: bool = False, wait_s: float = REFRESH_WAIT_S) -> dict:
         if force or is_stale(rows.get(source_id)):
             due.append(source_id)
         else:
-            out[source_id] = {'status': 'fresh', 'fetched_at': _iso(rows[source_id].fetched_at)}
+            out[source_id] = {'status': 'fresh', 'fetched_at': iso(rows[source_id].fetched_at)}
     if getattr(settings, 'FUENTES_INLINE', False):  # tests: one thread, one database connection
         for source_id in due:
             out[source_id] = _status(refresh(source_id, force=force))
@@ -158,7 +155,7 @@ def refresh_due(force: bool = False, wait_s: float = REFRESH_WAIT_S) -> dict:
 
 def upcoming_passes(satellite: dict, now) -> dict:
     """The satellite dict with `next_passes` cut to the next NEXT_PASSES still in the future."""
-    cutoff = _iso(now)
+    cutoff = iso(now)
     out = {}
     for slug, entry in satellite.items():
         if 'next_passes' in entry:
@@ -176,7 +173,7 @@ def get_payload(revalidate: bool = True) -> dict:
         if revalidate and is_stale(row, now) and not _claimed_recently(row, now):
             schedule_refresh(source_id)
         sources[source_id] = {
-            'fetched_at': _iso(row.fetched_at) if row else None,
+            'fetched_at': iso(row.fetched_at) if row else None,
             'ok': bool(row and row.ok),
             'ttl_s': module.TTL_S,
             'error': (row.error or None) if row else 'pendiente',
@@ -195,7 +192,7 @@ def get_payload(revalidate: bool = True) -> dict:
     slugs = set(satellite) | set(weather) | set(rivers) | set(near)
     names = dict(River.objects.filter(slug__in=slugs).values_list('slug', 'name')) if slugs else {}
     return {
-        'generated_at': _iso(now),
+        'generated_at': iso(now),
         'sources': sources,
         'fires': data('firms').get('fires') or {'type': 'FeatureCollection', 'features': []},
         'satellite': satellite,

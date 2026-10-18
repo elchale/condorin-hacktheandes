@@ -62,43 +62,51 @@ Built in 30 hours. These are the shortcuts we took on purpose, what each one ris
 | Shortcut | Where | Risk | In production |
 |---|---|---|---|
 | Hackathon alert window (today or yesterday) and a cap of 50 WhatsApp alerts | `detections/limits.py` | A real scene older than yesterday alerts nobody | Delete the limits; `ALERT_RECENT_DAYS` and Meta's own quality rating take over |
-| Everyone who signs in joins the default ONG | `panel.services.default_ong` | Anyone with a phone sees that ONG's incidents | Invitations sent by each ONG's admin, one member per invitation |
+| Everyone who signs in joins the default ONG as a full member (`DEFAULT_ONG_JOIN_ROLE`, `observer` to read only) | `panel.services.member_for_phone` | Anyone with a phone sees that ONG's incidents, gets its alerts and can sign its expedientes (set `observer` to stop that) | Invitations sent by each ONG's admin, one member per invitation |
 | Alerts are sent on a thread after the webhook answers | `detections.services.dispatch` | On Cloud Run with request based CPU the thread can stall; `manage.py send_pending_alerts` retries | `ALERTS_INLINE=True` or Cloud Tasks, plus CPU always allocated |
-| Code attempts and resend locks live in the instance cache | `accounts/views.py` | With several instances a guesser gets more tries per code | Shared cache (Redis or the database cache) |
+| Background work runs on daemon threads (alerts, the welcome, the admin email, the Claude hechos) | `detections.services.dispatch`, `panel/welcome.py`, `expedientes.services` | A daemon thread dies with its process: a deploy, a scale in or a crash mid send loses that work silently. Alerts are claimed as `sending` first, so `send_pending_alerts` picks them up again after `ALERT_SENDING_STALE_MINUTES`; a lost welcome, admin email or Claude rewrite is not retried (the deterministic hechos stay) | A task queue (Cloud Tasks) with retries, or a periodic `send_pending_alerts` job |
 | An unknown river slug from the detector is created, not rejected | `detections.services.ingest` | A typo stores a scene nobody watches (the webhook answers `no_recipients`) | Kept: a new river must be stored; an admin assigns ONGs to it |
 | The detector runs when someone calls its trigger, not on every upload | detector repo, `POST /procesar` | A forgotten call means no scene | Kept: bucket events fire per file with no "upload finished" signal; a scheduler calls the trigger after each satellite pass |
 | Demo clock | `core/clock.py`, `manage.py set_today` | A wrong day hides scenes or replays alerts | Only for demos; `set_today --real` |
 
 ## API
 
-Sixteen routes: the webhook, the expediente (three plus the event page), four for the condorin.pe server, the public map,
-five for the browser sign in (map and static SPA), and the pages.
+Seventeen routes: the webhook, the expediente (three plus the event page), four for the condorin.pe server, the public map,
+six for the browser sign in (map and static SPA), and the pages.
 
 | Method | Path | Who | What |
 |---|---|---|---|
 | POST | `/api/v1/detections` | detector | `Authorization: Bearer <Google ID token or shared secret>`, `Idempotency-Key`. 201 new, 200 duplicate. |
 | GET | `/api/v1/expedientes/<token>` | ONG member | Opens (and on first tap creates) the expediente, with everything the page needs. `?formato=pdf` returns the PDF. |
-| PATCH | `/api/v1/expedientes/<token>` | ONG member | Any subset of the fields (autosave), `authorities: [codes]`, `filings: [{authority, receipt_number, filed_at}]`, `reopen: true`. |
+| PATCH | `/api/v1/expedientes/<token>` | ONG member | Any subset of the fields (autosave), `authorities: [codes]`, `filings: [{authority, receipt_number, filed_at}]` (only with `Authorization: Bearer <session>` opened with a WhatsApp code by that same member, else 403 `code_session_required`), `reopen: true`. |
 | POST | `/api/v1/expedientes/<token>/enviar` | ONG member | `{}` checks completeness and sends the code (202). `{"code": "123456"}` finalizes and emails (200). |
-| GET | `/api/v1/panel` | condorin.pe server | `Authorization: Bearer <PANEL_API_SECRET>`, `X-Condorin-Phone`. The member, their ONG and its incidents with the next action. Joins the default ONG on first call (demo only) and sends the WhatsApp welcome, never an event. |
+| GET | `/api/v1/panel` | condorin.pe server | `Authorization: Bearer <PANEL_API_SECRET>`, `X-Condorin-Phone`. The member, their ONG and its incidents with the next action. Joins the default ONG on first call (demo only) with `DEFAULT_ONG_JOIN_ROLE` (default `member`) and sends the WhatsApp welcome, never an event. `member` carries `role` (`member` or `observer`) and `can_act`. |
 | POST | `/api/v1/panel/incidentes/<id>/expediente` | condorin.pe server | Same headers. The member's personal expediente token for that incident, created if they had no alert. |
 | POST | `/api/v1/panel/enlace` | condorin.pe server | `{"token"}` → the member a WhatsApp alert link may sign in (sent, under `LINK_SIGN_IN_DAYS`), else 404. |
 | GET | `/api/v1/panel/actividad?limit=N` | condorin.pe server | Secret only, no phone. The admin live feed: the last N scenes received (default 20, max 50), newest first, each with its detections, the ONGs that watch the river, their alerts and expediente, and the 8 decision steps (contract in `condorin/src/lib/admin/activity.ts`). |
 | GET | `/api/v1/mapa` | anyone | The public map (contract A in `hacktheandes/mapa-data/CONTRACT.md`): totals (with `alerts_opened` and `users` as usage counters), rivers, scenes, detections as GeoJSON, a monthly timeline and an anonymized activity feed. No names, phones, tokens or signed URLs. With a valid `Authorization: Bearer <session>` it adds `mine` and turns private. `manage.py export_mapa` prints the same JSON. |
 | GET | `/api/v1/fuentes` | anyone | Live open data for the map (contract D): NASA FIRMS VIIRS fires on the Amazon lowland side (lon -78.5 to -68, lat -13.5 to 0.5, 7 days, the 2,000 hottest) plus `fires_near_rivers` (fires within 25 km of each river), Sentinel 1 and 2 passes per river from the Copernicus catalogue (last, count, cloud, `next_passes`: the next 3 estimated radar passes), Open-Meteo rain and temperature per river with a 7 day `forecast`, GloFAS river discharge per river (`rivers[slug].discharge`: today, mean, trend, 14 day series, from the Open-Meteo Flood API), one Spanish `summary` sentence per river, and Global Forest Watch tile layers. Served from the `FeedCache` table. Any origin, gzip, 5 min cache. |
-| POST | `/api/v1/fuentes/refresh` | GitHub workflow | `Authorization: Bearer <PANEL_API_SECRET>`. Refreshes the stale sources now (`?force=1`: all of them) on parallel threads and returns each one's status (`ok`, `failed`, `fresh`, `busy`, or `running` when it outlasts 45 s and finishes in the background). 502 when every source it tried failed. |
-| POST | `/api/v1/auth/codigo` | map SPA | `{"phone", "consent": true}` → 202 `{"phone", "pending"}`. Sends `condorin_codigo` by WhatsApp. One code per phone every 45 s, 10 per IP per hour. |
-| POST | `/api/v1/auth/entrar` | map SPA | `{"pending", "code"}` → `{"token", "member", "ong"}`. 5 attempts per code. Records the sign in on `accounts_member` and joins the default ONG, like condorin.pe. |
+| POST | `/api/v1/fuentes/refresh` | GitHub workflow | `Authorization: Bearer <FUENTES_REFRESH_SECRET>` (when set; else `PANEL_API_SECRET`). Refreshes the stale sources now (`?force=1`: all of them) on parallel threads and returns each one's status (`ok`, `failed`, `fresh`, `busy`, or `running` when it outlasts 45 s and finishes in the background). 502 when every source it tried failed. |
+| POST | `/api/v1/auth/codigo` | map SPA | `{"phone", "consent": true}` → 202 `{"phone", "pending"}`. Sends `condorin_codigo` by WhatsApp. One code per phone every 45 s, 6 per phone and 10 per IP per hour (the IP is the last `X-Forwarded-For` entry, `NUM_PROXIES` 1). |
+| POST | `/api/v1/auth/entrar` | map SPA | `{"pending", "code"}` → `{"token", "member", "ong"}`. 5 attempts per code, 20 per phone and 30 per IP per hour. Records the sign in on `accounts_member` and joins the default ONG, like condorin.pe. |
 | POST | `/api/v1/auth/enlace` | SPA | `{"token": <alert token>}` → the same as `/auth/entrar` with `"via": "link"` and a 7 day session. Same rules and same 404 as `/api/v1/panel/enlace`. |
 | GET | `/api/v1/me` | map SPA | `Authorization: Bearer <token>`. Exactly the `/api/v1/panel` payload. |
+| POST | `/api/v1/auth/salir` | SPA | Same bearer. `{"signed_out": true}`. Ends every session of that phone on every device (bumps `session_version`); idempotent, a missing or dead session gets the same answer. |
 | POST | `/api/v1/me/incidentes/<id>/expediente` | map SPA | Same bearer. `{"token"}` like the panel route. |
-| GET | `/` and `/healthz/` | anyone | Landing page with the logo; liveness probe. |
-| | `/admin/` | staff | ONGs, members, rivers, authorities, detections, alerts, expedientes. |
+| GET | `/`, `/healthz/` and `/readyz/` | anyone | Landing page with the logo; liveness probe (the process is up); readiness probe (`SELECT 1` on the database, 503 when it does not answer). |
+| | `/admin/` | staff | ONGs, members, rivers, authorities, detections, alerts, expedientes. `ADMIN_URL` moves it (default `admin/`). |
 
 Errors always come back as `{"message", "type", "field_errors"}`. With a 400 from `/enviar`,
 `field_errors` lists exactly what is still missing, so the page can jump to it. Error `type`s the page
-should handle: `link_expired` (410), `code_invalid`, `code_expired`, `code_too_soon` (429),
-`expediente_locked` (409), `whatsapp_error` (502).
+should handle: `link_expired` (410), `code_invalid`, `code_expired`, `code_too_soon` (429), `code_limit` (429, more
+than 5 codes for one expediente in an hour), `expediente_locked` (409), `observer_restricted` (403), `code_session_required` (403, a filing sent without a code session), `whatsapp_error` (502).
+
+**Roles.** A member the ONG or the admins added (`role` `member`) opens, edits, confirms and files. Someone who joined the
+default ONG by signing in gets `DEFAULT_ONG_JOIN_ROLE`: `member` by default for the live demo, or `observer` (admins with a phone
+always join as `member`). For an observer the panel, the incidents, the alerts and the event page work as usual, and
+`GET /api/v1/expedientes/<token>` returns the ONG's existing draft with `"read_only": true`, the signer's `rep_name`,
+`rep_dni`, `rep_position` and `notify_email` blank, no names of other members and `pdf_url` null. `PATCH`, `/enviar` and
+`?formato=pdf` answer 403 `observer_restricted`. Promote someone in `/admin/` (Miembros, rol).
 
 The frontend is connected: condorin.pe/expediente/<token> calls these routes through its own `/api/expedientes` proxy,
 and condorin.pe/panel uses the panel routes. The screens are in [`docs/EXPEDIENTE_UX.md`](docs/EXPEDIENTE_UX.md).
@@ -113,9 +121,12 @@ and condorin.pe/panel uses the panel routes. The screens are in [`docs/EXPEDIENT
 - **Gzip.** `GZipMiddleware` compresses every response above 200 bytes when the client accepts it (Cloud Run does not).
 - **Session.** `pending` and the session token are `django.core.signing.TimestampSigner` values (salts `otp-pending`, `session`).
   The pending value carries an HMAC of the code keyed with `DJANGO_SECRET_KEY`, never the code; it lasts 10 minutes and the
-  session 30 days. Attempts and the 45 s resend lock live in Django's cache (LocMem): exact on one instance, per instance
-  behind several until `CACHES` points at a shared backend. Error types: `code_invalid`, `code_expired`, `code_too_soon` (429),
-  `session_invalid` (401). Sessions carry `via` (`code` or `link`); a link session never finalizes a denuncia, because
+  session 30 days. Attempts, the 45 s resend lock and the throttles of the sign in routes live in the shared default
+  cache, the DatabaseCache table `django_cache` (created by the `core` migration `0002_cache_table`), so the limits hold across
+  every Cloud Run instance. The map and feed payloads, the clock row and the high volume throttles stay in the process cache
+  `local` (`core/cache.py`, `core/throttling.py`). Error types: `code_invalid`, `code_expired`, `code_too_soon` (429),
+  `session_invalid` (401). Sessions also carry `v`, the phone's `session_version` (`ongs_member`, the highest of its rows):
+  `/auth/salir` bumps it, so every older token of that phone stops working. Tokens from before versions count as 0. Sessions carry `via` (`code` or `link`); a link session never finalizes a denuncia, because
   `/enviar` ignores the bearer and always asks for the WhatsApp code sent to that member.
 - **Browser calls.** The expediente, event, PDF, `/auth/*` and `/me*` routes answer condorin.pe and www.condorin.pe
   (preflight with `Authorization` and JSON bodies); `Content-Disposition` is exposed so the SPA can name the PDF.
@@ -135,8 +146,8 @@ time of day, and keeps ticking from there (`2026-07-10T09:00` pins the start ins
 - Every payload carries `clock`: `{"now", "today", "label", "simulated", "timezone"}`. The SPA shows it on the panel
   (date, ticking Lima time, a "fecha simulada" tag) and uses `now` for "últimos 30 días" and "hace 5 min".
 - Security windows stay on the real clock: alert link expiry (`ALERT_LINK_DAYS`), WhatsApp codes and signed
-  sessions. The link sign in window (`LINK_SIGN_IN_DAYS` after `sent_at`) follows the clock, so a demo alert signs
-  in while the demo day is set; after `--real` those links are older than the window and no longer sign in.
+  sessions, and the link sign in window (`LINK_SIGN_IN_DAYS` from the real moment the alert row was created, not
+  its demo `sent_at`), so a demo alert signs in for 7 real days whatever day the clock shows.
 - The state is one row read through the process cache for 5 s, so a request costs at most one extra query and
   every instance follows a change within seconds. The public map cache key includes the day.
 
@@ -192,9 +203,10 @@ evidence still records the URIs, but the hashes and signed links stay empty.
 
 The hechos of a new expediente are written by `expedientes/drafting.py` from the detection. With
 `EXPEDIENTE_IA_ENABLED=True` and an `ANTHROPIC_API_KEY`, that draft goes once through Claude
-(`expedientes/redaccion.py`, LangChain, model `EXPEDIENTE_IA_MODEL`, default `claude-opus-5-5`) and the
-member sees the rewritten version. The flag is off by default; if the call fails, the deterministic
-draft is kept and the expediente still opens.
+(`expedientes/redaccion.py`, LangChain, model `EXPEDIENTE_IA_MODEL`, default `claude-opus-5-5`) after the
+expediente is committed, on a thread (`expedientes.services.improve_later`), so no transaction waits on Claude. The
+expediente is stored and shown with the deterministic draft first; the rewrite replaces it only while nobody edited
+the hechos. The flag is off by default; if the call fails, the deterministic draft is kept.
 
 ## Shared database
 
@@ -209,23 +221,19 @@ changes them, update that mapping and run `npx prisma generate`.
 `manage.py import_prisma_backup <file.json>` loads admins and members from a JSON backup of the old
 Prisma tables. That is how the users were carried over on 2026-10-17. The backup stays outside the repo.
 
-Tests never touch production rows. pytest creates a separate `test_condorin` database on the same
-server and drops it at the end.
+Tests never touch production rows. pytest creates a separate `test_condorin` database on the server of
+`DATABASE_URL` and drops it at the end, and `backend/test_settings.py` refuses to load when that server is Neon:
+run `scripts/check.sh` (a throwaway Postgres in Docker) or point `DATABASE_URL` at a local Postgres.
 
 ## Deploy
 
-Either platform works. Whichever serves `api.condorin.pe`, set the variables from `.env.template` and,
-before the first real alert:
+Cloud Run serves `api.condorin.pe` (a push to main deploys it, see `.github/workflows/ci.yml`). Set the
+variables from `.env.template` and, before the first real alert:
 
 1. `condorin_evento_v2` (no footer; buttons Crear expediente and Ver evento) is approved on the Qolca WABA (2026-10-17). New wording needs a new name: change `WA_ALERT_TEMPLATE` and run `create_alert_template --submit`.
 2. Give the GCS service account `storage.objects.get` on the detector buckets. It needs a key to sign links.
 3. Configure the detector: an OIDC token with audience `https://api.condorin.pe/api/v1/detections` from a
    service account listed in `DETECTIONS_ALLOWED_SERVICE_ACCOUNTS`, or the shared secret.
-
-### Railway
-
-`railway.json` builds with Nixpacks (`build_scripts/build.sh`), migrates on start, and runs gunicorn with
-threads. The health check is `/healthz/`.
 
 ### Cloud Run
 
