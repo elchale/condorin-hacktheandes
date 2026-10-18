@@ -23,7 +23,7 @@ docs/
 scripts/
 deploy/
 .claude/
-# Weights only enter the image through the pre-fetched ./model directory (see docker/detector.Dockerfile)
+# Weights only enter the image through the pre-fetched ./model directory (see docker/job.Dockerfile)
 **/*.onnx
 **/*.engine
 *.jpg

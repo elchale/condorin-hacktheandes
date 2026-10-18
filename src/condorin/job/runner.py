@@ -23,7 +23,7 @@ from pathlib import PurePosixPath
 import cv2
 import numpy as np
 
-from condorin.core.detector import Detector
+from condorin.core.detector import Detector, ModelCardMismatch
 from condorin.core.meta import box_to_webhook, idempotency_key, resolve_image_meta
 from condorin.core.model_card import ModelCard
 from condorin.core.qc import run_qc
@@ -222,6 +222,28 @@ class Runner:
         return self.reporter.post(payload, idempotency_key(bucket, obj, generation)), len(found)
 
 
+def warn_runtime_drift(card: ModelCard) -> list[str]:
+    """Warn when the installed ultralytics/torch differ from the versions the card was trained with
+    (`training.ultralytics`, `training.torch`); scores can shift between versions."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    drift = []
+    for pkg in ("ultralytics", "torch"):
+        want = card.training.get(pkg)
+        if not want:
+            continue
+        try:
+            have = version(pkg)
+        except PackageNotFoundError:
+            continue
+        if have.split("+")[0] != str(want).split("+")[0]:
+            drift.append(f"{pkg} {have} (model trained with {want})")
+    if drift:
+        log.warning("model runtime differs from training: " + ", ".join(drift),
+                    extra={"model_version": card.version})  # fmt: skip
+    return drift
+
+
 def main() -> int:
     from condorin.core.detector import build_detector
     from condorin.core.model_card import load_model_card
@@ -245,7 +267,13 @@ def main() -> int:
         log.error("no model_card.json in MODEL_DIR (was the model baked into the image?)",
                   extra={"fields": {"model_dir": settings.model_dir}})  # fmt: skip
         return 2
-    detector = build_detector(settings, card)
+    if not settings.fake_model:
+        warn_runtime_drift(card)
+    try:
+        detector = build_detector(settings, card)
+    except (ModelCardMismatch, FileNotFoundError) as err:
+        log.error(f"model not usable: {err}", extra={"model_version": card.version})
+        return 2
 
     index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
     count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))

@@ -115,15 +115,20 @@ Or from GitHub: **Actions → Procesar imágenes → Run workflow** with the pre
 (`.github/workflows/procesar.yml`). It also runs daily at 12:00 UTC for yesterday's date in every river of
 the repo variable `RIVERS` (default `yaguas`). It needs the repo variable `TRIGGER_URL` (the trigger's URL).
 
+## Docs
+
+- [`docs/backend-contract.md`](docs/backend-contract.md): the report sent per scene, auth, skip reasons, retries.
+- [`docs/runbook.md`](docs/runbook.md): starting and watching runs, failures, large prefixes, model rollout.
+- [`models/README.md`](models/README.md): publishing a model to GCS.
+
 ## Layout
 
 ```
 src/condorin/
   core/      model card, tiling, detector (YOLO + fake), NMS, QC, decision, geo/meta, river gate
-  io/        storage (gs:// + local), overlay rendering
+  io/        storage (gs:// + local)
   job/       Cloud Run Job: listing, per-image processing, crops, backend reporter
   trigger/   Cloud Run service: POST /procesar → run the Job
-  service/, notifier/   previous Cloud Tasks design (not deployed by CI; candidates for removal)
 docker/      job.Dockerfile (CPU + model), trigger.Dockerfile
 deploy/      gcp-setup.sh
 ```

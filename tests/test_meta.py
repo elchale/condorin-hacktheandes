@@ -8,8 +8,6 @@ from condorin.core.meta import (
     captured_at_from_name,
     idempotency_key,
     resolve_image_meta,
-    result_key,
-    task_name,
 )
 
 TILE = "tile_r003_c004_sw_-2.782003_-70.977122_ne_-2.772959_-70.968128.jpg"
@@ -37,13 +35,9 @@ def test_box_to_webhook_bbox_and_no_bounds():
     assert bbox == [412, 318, 14, 9] and lat is None and lon is None
 
 
-def test_idempotency_and_task_names():
+def test_idempotency_key():
     key = idempotency_key("river-images", "yaguas/2026-10-15T1042Z_s1.jpeg", "1792297654023751")
     assert key == "river-images/yaguas/2026-10-15T1042Z_s1.jpeg#1792297654023751"
-    name = task_name("deliver", key + "v0.3")
-    assert name.startswith("deliver-") and len(name) == len("deliver-") + 40
-    assert name == task_name("deliver", key + "v0.3")
-    assert result_key("gs://b/o", "1", "v1") != result_key("gs://b/o", "1", "v2")
 
 
 def test_resolve_image_meta_priority():

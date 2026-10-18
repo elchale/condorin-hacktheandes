@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "condorin"
 version = "0.1.0"
-description = "Detects illegal-mining vessels on Amazon rivers in satellite imagery and reports them to a Django backend by webhook."
+description = "Detects illegal-mining vessels on Amazon rivers in satellite imagery and reports every scene to the Condorin backend."
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
@@ -25,10 +25,12 @@ job = [
     "google-auth>=2.29",
     "requests>=2.31",
 ]
-# Model runtime for the Job. torch comes from the PyTorch CPU wheel index in the Dockerfile.
+# Model runtime for the Job. Pinned to the versions the model is trained and evaluated with; change
+# them together with model_card.json `training.ultralytics` / `training.torch` (see models/README.md).
+# torch itself comes from the PyTorch CPU wheel index (docker/job.Dockerfile pins the same version).
 ml = [
-    "ultralytics>=8.2",
-    "torch",
+    "ultralytics==8.4.182",
+    "torch==2.14.1",
 ]
 # Cloud Run service `condorin-detector-trigger`: no torch, no ultralytics.
 trigger = [
@@ -38,22 +40,8 @@ trigger = [
     "google-auth>=2.29",
     "requests>=2.31",
 ]
-# Notifier service (and the HTTP/GCS parts of the detector). No torch, no ultralytics.
-notifier = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.29",
-    "httpx>=0.27",
-    "google-cloud-storage>=2.16",
-]
-# Detector service. torch is installed from the PyTorch CPU wheel index in the Dockerfile; it is
-# deliberately not pinned here.
-serve = [
-    "condorin[notifier]",
-    "google-cloud-tasks>=2.16",
-    "ultralytics>=8.2",
-    "torch",
-]
 dev = [
+    "httpx2>=2.13",  # starlette's TestClient (tests/test_trigger.py)
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
@@ -72,13 +60,13 @@ addopts = "-q"
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:google.*",
-    "ignore:Using `httpx` with `starlette.testclient`",
+    "ignore:Using `httpx` with `starlette.testclient`",  # fastapi's TestClient in test_trigger
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["docs/examples", "*.md"]
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]
