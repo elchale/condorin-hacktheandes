@@ -6,6 +6,7 @@ name: Procesar imágenes
 # (comma separated, default "yaguas"); a river with no images that day is skipped.
 # GitHub signs in as github-deployer (GCP_SA_KEY) and mints an ID token for the trigger's URL
 # (repo variable TRIGGER_URL); github-deployer needs roles/run.invoker on the trigger.
+# Until TRIGGER_URL is set, the daily run is skipped with a warning; a manual run fails.
 # Re-running a prefix is safe: the backend deduplicates every image by Idempotency-Key.
 on:
   schedule:
@@ -31,9 +32,21 @@ jobs:
       TRIGGER_URL: ${{ vars.TRIGGER_URL }}
     steps:
       - name: Check configuration
+        id: config
+        env:
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
-          [ -n "$TRIGGER_URL" ] || { echo "::error::set the repo variable TRIGGER_URL"; exit 1; }
+          if [ -n "$TRIGGER_URL" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$SCHEDULED" = true ]; then
+            echo "::warning::TRIGGER_URL is not set: daily run skipped (set the repo variable once the detector is deployed)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::set the repo variable TRIGGER_URL"
+            exit 1
+          fi
       - id: auth
+        if: steps.config.outputs.ready == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -41,6 +54,7 @@ jobs:
           id_token_audience: ${{ vars.TRIGGER_URL }}
           id_token_include_email: true
       - name: POST /procesar
+        if: steps.config.outputs.ready == 'true'
         env:
           ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           PREFIX_INPUT: ${{ inputs.prefix }}
@@ -61,7 +75,7 @@ jobs:
               -H "Authorization: Bearer ${ID_TOKEN}" -H 'Content-Type: application/json' -d "$body")
             echo "$prefix → HTTP $code: $(cat resp.json)"
             if [ "$code" = 202 ]; then
-              echo "- \`$prefix\`: $(jq -r .execution resp.json)" >> "$GITHUB_STEP_SUMMARY"
+              echo "- \`$prefix\`: $(jq -r '"\(.images) imágenes, \(.tasks) tareas: \(.execution)"' resp.json)" >> "$GITHUB_STEP_SUMMARY"
             elif [ "$code" = 404 ] && [ "$SCHEDULED" = true ]; then
               echo "- \`$prefix\`: sin imágenes" >> "$GITHUB_STEP_SUMMARY"
             else

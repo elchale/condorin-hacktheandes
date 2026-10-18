@@ -14,7 +14,7 @@ provider uploads N images to gs://river-images/<river>/<YYYY-MM-DD>T<HHMM>Z_s1.j
         │
         ▼  button or call: POST https://<trigger>/procesar {"prefix": "yaguas/2026-10-18"}
 Cloud Run SERVICE condorin-detector-trigger (small, IAM-authenticated):
-        validates the prefix, checks it has objects, runs the Job with PREFIX as override → 202
+        validates the prefix, counts its images, runs the Job with PREFIX and a task count → 202
         │
         ▼
 Cloud Run JOB condorin-detector (CPU, model baked in): lists gs://river-images/<prefix>*, per image:
@@ -36,6 +36,7 @@ later start the same Job once a day. Bucket events (Eventarc) were ruled out: th
 | `river` | First path segment (`yaguas/...` → `yaguas`), must be a slug. |
 | `captured_at` | Custom metadata `captured_at`, else the name `<YYYY-MM-DD>T<HHMM>Z` (UTC). |
 | `satellite` | Custom metadata `satellite`, else `DEFAULT_SATELLITE` (`SkyFi`). |
+| GSD | Custom metadata `gsd_m` (metres per pixel), checked against the card's `expected_gsd_m`; without it the check is skipped. |
 | `lat`/`lon` | Box centre mapped linearly inside the scene bounds: custom metadata `bounds` = `{"sw": [lat, lon], "ne": [lat, lon]}`, else `..._sw_<lat>_<lon>_ne_<lat>_<lon>...` in the name. |
 | Detections | Positive class (`mining_vessel`) with confidence ≥ `MIN_CONFIDENCE` (default: the model card's `review_low`), strongest 500. |
 | `bbox` | `[x, y, w, h]` integer pixels, top-left origin, full image. |
@@ -43,15 +44,18 @@ later start the same Job once a day. Bucket events (Eventarc) were ruled out: th
 
 Every readable image is reported, with or without detections; the backend deduplicates by
 `Idempotency-Key: <bucket>/<object>#<generation>`, so re-running a prefix is safe.
-An image is **not** reported (and counts as failed) when QC rejects it, `river` or `captured_at` is missing,
-or it has detections but no bounds: posting `[]` there would mark a scene with findings as clean.
+An image is **not** reported (and counts as failed) when QC rejects it (including a GSD mismatch),
+`river` or `captured_at` is missing, or it has detections but no bounds: posting `[]` there would mark a
+scene with findings as clean. A task also stops starting images 5 min before its timeout; those count as
+`not_started` and a re-run picks them up.
 
 Logs are JSON for Cloud Logging. Each task ends with
-`done: N reported (M with findings), F failed, of T` plus `failures_by_reason`, `duplicates` and `alerted`.
-The execution exits non-zero when any image failed.
+`done: N reported (M with findings), F failed, of T` plus `failures_by_reason`, `duplicates` and `alerted`,
+and writes `gs://river-images/reports/<execution>/task-NNN.json` listing every image it did not report and
+why. The execution exits non-zero when any image failed.
 
-The backend alerts only for `confidence >= 0.5` and scenes captured within the last 7 days; older or weaker
-detections are stored and mapped without alerting.
+The backend alerts only for `confidence >= 0.7` (`ALERT_MIN_CONFIDENCE`) and scenes captured within the
+last 7 days; older or weaker detections are stored and mapped without alerting.
 
 ## Quickstart (fake model, no GCP)
 
@@ -74,13 +78,14 @@ For the real model install `torch` (CPU wheel index) and `.[ml]`, and point `MOD
 
 Job (`src/condorin/job/config.py`): `PREFIX` (set per execution by the trigger), `INPUT_BUCKET`,
 `WEBHOOK_MODE` (`post` in production, `log` for dry runs), `WEBHOOK_URL`, `MIN_CONFIDENCE`,
-`DEFAULT_SATELLITE`, `CROPS_PREFIX`, `MAX_IMAGES`, `MODEL_DIR`. Auth is a Google ID token of the runtime SA
-with audience `WEBHOOK_URL`. `DETECTIONS_SHARED_SECRET` (from Secret Manager, never in the repo) is an
-optional fallback. Large prefixes can be split across tasks: `gcloud run jobs update condorin-detector
---tasks 4`; each task takes every 4th image.
+`DEFAULT_SATELLITE`, `CROPS_PREFIX`, `REPORTS_PREFIX`, `TASK_BUDGET_S`, `MAX_IMAGES`, `MODEL_DIR`. Auth is
+a Google ID token of the runtime SA with audience `WEBHOOK_URL`. `DETECTIONS_SHARED_SECRET` (from Secret
+Manager, never in the repo) is an optional fallback.
 
 Trigger (`src/condorin/trigger/app.py`): `GCP_PROJECT`, `GCP_REGION`, `JOB_NAME`, `INPUT_BUCKET`,
-`CHECK_PREFIX`.
+`CHECK_PREFIX`, `IMAGES_PER_TASK` (default 200), `MAX_TASKS` (default 10). It runs
+ceil(images / `IMAGES_PER_TASK`) tasks, at most `MAX_TASKS`; each task takes every N-th image. A request
+can set `"tasks"` explicitly. Set `IMAGES_PER_TASK` from `scripts/benchmark.py` once the model exists.
 
 ## Deploy
 
@@ -107,7 +112,7 @@ Start a run:
 URL=$(gcloud run services describe condorin-detector-trigger --region us-central1 --format='value(status.url)')
 curl -X POST "$URL/procesar" -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
   -H 'Content-Type: application/json' -d '{"prefix": "yaguas/2026-10-18"}'
-# → 202 {"execution": "projects/.../executions/condorin-detector-xxxxx", ...}
+# → 202 {"execution": "projects/.../executions/condorin-detector-xxxxx", "images": 450, "tasks": 3, ...}
 gcloud run jobs executions list --job condorin-detector --region us-central1
 ```
 

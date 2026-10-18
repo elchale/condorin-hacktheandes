@@ -48,8 +48,9 @@ if ! exists gcloud iam service-accounts describe "$SA" --project "$PROJECT"; the
 fi
 
 echo "== bucket IAM on gs://${INPUT_BUCKET}"
-# objectViewer: list and read scenes. objectCreator: create crops under crops/. Without objectAdmin
-# the detector cannot overwrite or delete anything, so pinned evidence stays intact.
+# objectViewer: list and read scenes. objectCreator: create crops under crops/ and run reports under
+# reports/. Without objectAdmin the detector cannot overwrite or delete anything, so pinned evidence
+# stays intact.
 for role in roles/storage.objectViewer roles/storage.objectCreator; do
   run gcloud storage buckets add-iam-policy-binding "gs://${INPUT_BUCKET}" \
     --member "serviceAccount:${SA}" --role "$role"
@@ -59,7 +60,10 @@ echo "== GitHub deployer may deploy resources that run as ${SA}"
 run gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" \
   --member "serviceAccount:${DEPLOYER_SA}" --role roles/iam.serviceAccountUser
 
-JOB_ENV="WEBHOOK_MODE=post,INPUT_BUCKET=${INPUT_BUCKET},WEBHOOK_URL=${WEBHOOK_URL}"
+# The Job stops starting images 5 min before its task timeout, to log its summary and write
+# reports/<execution>/task-NNN.json before Cloud Run kills the task.
+TASK_BUDGET_S=$(( ${JOB_TIMEOUT%s} - 300 ))
+JOB_ENV="WEBHOOK_MODE=post,INPUT_BUCKET=${INPUT_BUCKET},WEBHOOK_URL=${WEBHOOK_URL},TASK_BUDGET_S=${TASK_BUDGET_S}"
 echo "== Cloud Run Job ${JOB}"
 if exists gcloud run jobs describe "$JOB" --project "$PROJECT" --region "$REGION"; then
   run gcloud run jobs update "$JOB" --project "$PROJECT" --region "$REGION" \
