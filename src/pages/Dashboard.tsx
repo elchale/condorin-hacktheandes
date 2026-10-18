@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { buildPeriods, DEFAULT_PERIOD, FOOTPRINT_HA, RIVER_FALLBACK } from "../config";
-import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
-import { useFuentes } from "../lib/fuentes";
-import { fmtNum } from "../lib/format";
+import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
+import { forecastDays, nextPass, oldestFetch, slugKey, useFuentes } from "../lib/fuentes";
+import { fmtAgo, fmtNum } from "../lib/format";
 import { Headline, Kpis, Legend, PeriodSelector, UpdatedLine } from "../components/MapPanelHeader";
 import { TopBar } from "../components/TopBar";
 import { WelcomeOverlay } from "../components/WelcomeOverlay";
@@ -232,8 +232,30 @@ export function Dashboard() {
     const out: { id: string; label: string; credit: string; url?: string }[] = [];
     if (firesOn && feeds) out.push({ id: "fires", label: "Incendios", credit: feeds.sources.firms?.attribution || "NASA FIRMS", url: feeds.sources.firms?.url });
     for (const t of activeTiles) out.push({ id: t.id, label: t.title, credit: t.attribution, url: "https://www.globalforestwatch.org" });
+    if (feeds) {
+      const src = feeds.sources;
+      if (src["open-meteo"]?.ok) out.push({ id: "open-meteo", label: "Lluvia y pronóstico", credit: src["open-meteo"].attribution, url: src["open-meteo"].url });
+      if (src.glofas?.ok) out.push({ id: "glofas", label: "Caudal de los ríos", credit: src.glofas.attribution, url: src.glofas.url });
+      if (src.sentinel?.ok) out.push({ id: "sentinel", label: "Pasos de radar", credit: src.sentinel.attribution, url: src.sentinel.url });
+    }
     return out;
   }, [firesOn, feeds, activeTiles]);
+  const liveAt = feeds ? oldestFetch(feeds.sources) : null;
+  // Popup lines for each river ring on the map: next radar pass and rain for the next 3 days.
+  const riverInfo = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    if (!feeds) return out;
+    for (const r of rivers) {
+      const k = slugKey(r.slug);
+      const lines: string[] = [];
+      const pass = nextPass(feeds.satellite[k]);
+      if (pass) lines.push(`Próximo paso de radar: ${pass}`);
+      for (const d of forecastDays(feeds.weather[k]).slice(0, 3))
+        lines.push(`Lluvia ${d.day}: ${Math.round(d.rain_mm)} mm${d.rain_prob != null ? ` (probabilidad ${d.rain_prob} %)` : ""}`);
+      if (lines.length) out[r.slug] = lines;
+    }
+    return out;
+  }, [feeds, rivers]);
 
   // Dense layers that are on but hidden at this zoom (the map draws them from zoom 9 up).
   const farLayers =
@@ -314,6 +336,12 @@ export function Dashboard() {
     setCommand({ kind: "detection", id, n: ++n.current });
     if (!desktop) setSnap(0);
   };
+  const [riverFocus, setRiverFocus] = useState<{ slug: string; n: number } | null>(null);
+  const openRiver = (slug: string) => {
+    setTab("rios");
+    setRiverFocus({ slug, n: ++n.current });
+    if (!desktop) setSnap(2);
+  };
   const pickRiver = (r: ResolvedRiver) => {
     wantMap();
     setCommand({ kind: "point", lat: r.lat, lon: r.lon, zoom: 11, n: ++n.current });
@@ -388,6 +416,7 @@ export function Dashboard() {
                 fires={firesOn ? feeds?.fires ?? null : null}
                 tiles={activeTiles}
                 onReady={onMapReady}
+                riverInfo={riverInfo}
               />
             </Suspense>
           ) : (
@@ -457,6 +486,11 @@ export function Dashboard() {
             </div>
             <PeriodSelector periods={periods} value={period.id} onChange={setPeriodId} />
           </div>
+          {currentTab !== "rios" && (
+            <div className="shrink-0 pt-3">
+              <TodayRivers rivers={rivers} mine={mine} feeds={feeds} onOpen={openRiver} />
+            </div>
+          )}
           <div className="hidden shrink-0 px-4 pt-4 lg:block">{legend}</div>
           <div className="h-3 shrink-0" />
           <div role="tablist" aria-label="Secciones" className="flex shrink-0 border-b border-line px-2">
@@ -496,12 +530,13 @@ export function Dashboard() {
                 onPick={pickDetection}
               />
             )}
-            {currentTab === "rios" && <RiverList rivers={rivers} mine={mine} onPick={pickRiver} feeds={feeds} />}
+            {currentTab === "rios" && <RiverList rivers={rivers} mine={mine} onPick={pickRiver} feeds={feeds} focus={riverFocus} />}
             {currentTab === "capas" && (
               <LayersTab metas={metas} active={activeIds} status={layerStatus} onToggle={toggleLayer} saveData={saveData} onToggleSave={toggleSave} extras={extras} />
             )}
             <div className="mt-6 space-y-1">
               <UpdatedLine generatedAt={data.generated_at} live={live} totals={data.totals} />
+              {liveAt && <p className="tnum px-4 text-xs text-muted">Datos en vivo actualizados {fmtAgo(liveAt)}</p>}
             </div>
             <SourcesFooter layers={metas} live={liveCredits} />
           </div>

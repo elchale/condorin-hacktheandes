@@ -2,7 +2,8 @@ import { BRAND_NAME } from "../config";
 import { fmtAgo, fmtDayYear, fmtNum, fmtPct, fmtShortDate, fmtTime } from "../lib/format";
 import type { ActivityItem, DetectionFeature, LayerMeta } from "../types";
 import { DEFAULT_LAYERS, layerMinZoom, type ResolvedRiver } from "../map/types";
-import { radarLine, rainLine, slugKey, type Fuentes, type RiverSatellite, type RiverWeather } from "../lib/fuentes";
+import { useEffect } from "react";
+import { dischargeLine, firesLine, forecastDays, radarLine, slugKey, summaryBody, type Fuentes, type RiverWeather } from "../lib/fuentes";
 
 export type DetFilter = "todas" | "alerta" | "mias";
 
@@ -89,26 +90,37 @@ export function RiverList({
   mine,
   onPick,
   feeds,
+  focus,
 }: {
   rivers: ResolvedRiver[];
   mine: Set<string>;
   onPick: (r: ResolvedRiver) => void;
   feeds?: Fuentes | null;
+  /** Slug of the card to scroll to and outline ("Ver río" from the dashboard). */
+  focus?: { slug: string; n: number } | null;
 }) {
+  useEffect(() => {
+    if (focus) document.getElementById(`rio-${focus.slug}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [focus]);
   return (
     <ul className="space-y-2 px-3 sm:px-4">
       {rivers.map((r) => (
-        <li key={r.slug}>
+        <li key={r.slug} id={`rio-${r.slug}`} className="scroll-mt-3">
           <button
             type="button"
             onClick={() => onPick(r)}
-            className={`w-full rounded-lg border bg-panel-2/60 p-3 text-left hover:bg-panel-2 ${mine.has(r.slug) ? "border-cian/60" : "border-line"}`}
+            className={`w-full rounded-lg border bg-panel-2/60 p-3 text-left hover:bg-panel-2 ${
+              focus?.slug === r.slug ? "border-rojo ring-2 ring-rojo/30" : mine.has(r.slug) ? "border-cian/60" : "border-line"
+            }`}
           >
             <span className="flex items-baseline justify-between gap-2">
               <span className="font-bold">Río {r.name}</span>
               {mine.has(r.slug) && <span className="label-caps !text-cian">Tu ONG</span>}
             </span>
             <span className="mt-0.5 block text-xs text-muted">{[r.region, r.province].filter(Boolean).join(", ")}</span>
+            {feeds?.summary[slugKey(r.slug)] && (
+              <span className="mt-2 block text-[13px] leading-snug text-ink">{summaryBody(feeds.summary[slugKey(r.slug)])}</span>
+            )}
             {r.protected_area && (
               <span className="mt-2 inline-block rounded border border-verde/40 bg-verde/10 px-1.5 py-0.5 text-[11px] font-semibold text-verde">
                 {r.protected_area}
@@ -128,7 +140,7 @@ export function RiverList({
                 {r.last_captured_at ? fmtDayYear(r.last_captured_at) : "Ninguna"}
               </span>
             </span>
-            {feeds && <FeedLines sat={feeds.satellite[slugKey(r.slug)]} wx={feeds.weather[slugKey(r.slug)]} />}
+            {feeds && <FeedLines feeds={feeds} slug={slugKey(r.slug)} />}
           </button>
         </li>
       ))}
@@ -136,16 +148,55 @@ export function RiverList({
   );
 }
 
-function FeedLines({ sat, wx }: { sat?: RiverSatellite; wx?: RiverWeather }) {
-  const lines = [radarLine(sat), rainLine(wx)].filter((x): x is string => !!x);
-  if (!lines.length) return null;
+/** Forecast strip, discharge, radar and nearby fires for one river card; each line only when it has data. */
+function FeedLines({ feeds, slug }: { feeds: Fuentes; slug: string }) {
+  const days = forecastDays(feeds.weather[slug]);
+  const lines = [
+    dischargeLine(feeds.rivers[slug]?.discharge),
+    radarLine(feeds.satellite[slug]),
+    firesLine(feeds.fires_near_rivers[slug]),
+  ].filter((x): x is string => !!x);
+  if (!days.length && !lines.length) return null;
   return (
-    <span className="mt-2 block space-y-0.5 border-t border-line pt-2 text-xs text-muted">
-      {lines.map((l) => (
-        <span key={l} className="block">
-          {l}
+    <span className="mt-2 block space-y-2 border-t border-line pt-2 text-xs text-muted">
+      {days.length > 0 && <RainStrip days={days} w={feeds.weather[slug]} />}
+      {lines.length > 0 && (
+        <span className="block space-y-0.5">
+          {lines.map((l) => (
+            <span key={l} className="block">
+              {l}
+            </span>
+          ))}
         </span>
-      ))}
+      )}
+    </span>
+  );
+}
+
+/** Seven small bars: rain in mm per day, paler when the rain is less likely. */
+function RainStrip({ days, w }: { days: ReturnType<typeof forecastDays>; w?: RiverWeather }) {
+  const top = Math.max(10, ...days.map((d) => d.rain_mm));
+  const label = days.map((d) => `${d.day}: ${Math.round(d.rain_mm)} mm${d.rain_prob != null ? `, ${d.rain_prob} %` : ""}`).join("; ");
+  return (
+    <span className="block">
+      <span className="block font-semibold text-ink">Lluvia prevista, próximos {days.length} días (mm)</span>
+      <span className="mt-1 grid gap-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }} role="img" aria-label={label}>
+        {days.map((d) => (
+          <span key={d.date} className="flex flex-col items-center" title={`${d.day}: ${Math.round(d.rain_mm)} mm, probabilidad ${d.rain_prob ?? "?"} %`}>
+            <span className="flex h-8 w-full items-end justify-center rounded-sm bg-white">
+              <span
+                className="w-3 rounded-t-sm bg-sky-600"
+                style={{ height: `${Math.max(2, Math.round((d.rain_mm / top) * 32))}px`, opacity: 0.3 + 0.7 * Math.min(1, Math.max(0, (d.rain_prob ?? 100) / 100)) }}
+              />
+            </span>
+            <span className="tnum mt-0.5 text-[11px] font-semibold leading-none text-ink">{Math.round(d.rain_mm)}</span>
+            <span className="mt-0.5 text-[10px] leading-none">{d.letter}</span>
+          </span>
+        ))}
+      </span>
+      <span className="mt-1 block text-[11px]">
+        {typeof w?.rain_mm_next_3d === "number" ? `${Math.round(w.rain_mm_next_3d)} mm en los próximos 3 días. ` : ""}Barra más clara: lluvia menos probable.
+      </span>
     </span>
   );
 }
@@ -393,5 +444,47 @@ export function SourcesFooter({ layers, live = [] }: { layers: LayerMeta[]; live
         ))}
       </ul>
     </footer>
+  );
+}
+
+/** "Hoy en los ríos": the live summary sentence of the watched rivers (two on phones, three on desktop). */
+export function TodayRivers({
+  rivers,
+  mine,
+  feeds,
+  onOpen,
+}: {
+  rivers: ResolvedRiver[];
+  mine: Set<string>;
+  feeds: Fuentes | null;
+  onOpen: (slug: string) => void;
+}) {
+  if (!feeds) return null;
+  const rows = rivers
+    .filter((r) => feeds.summary[slugKey(r.slug)])
+    .sort((a, b) => Number(mine.has(b.slug)) - Number(mine.has(a.slug)) || b.detections - a.detections)
+    .slice(0, 3);
+  if (!rows.length) return null;
+  return (
+    <section className="px-4" aria-labelledby="hoy-rios">
+      <h2 id="hoy-rios" className="label-caps mb-1.5">
+        Hoy en los ríos
+      </h2>
+      <ul className="divide-y divide-line rounded-xl bg-panel-2">
+        {rows.map((r, i) => (
+          <li key={r.slug} className={`flex items-center gap-2 py-1.5 pl-3 pr-1.5 ${i === 2 ? "hidden lg:flex" : ""}`}>
+            <p className="line-clamp-2 min-w-0 flex-1 text-xs leading-snug text-ink">{feeds.summary[slugKey(r.slug)]}</p>
+            <button
+              type="button"
+              onClick={() => onOpen(r.slug)}
+              className="min-h-11 shrink-0 rounded-lg px-2.5 text-xs font-bold text-rojo hover:bg-white"
+              aria-label={`Ver río ${r.name}`}
+            >
+              Ver río
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

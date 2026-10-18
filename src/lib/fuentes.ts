@@ -1,5 +1,5 @@
-// Live open data feeds from GET /api/v1/fuentes (public, gzip, about 60 KB): NASA FIRMS fires,
-// Sentinel passes and weather per river, and Global Forest Watch raster tile layers.
+// Live open data feeds from GET /api/v1/fuentes (public, gzip, about 30 KB): NASA FIRMS fires,
+// Sentinel passes, weather forecast, GloFAS discharge and a summary sentence per river, and Global Forest Watch raster tile layers.
 // Fetched once after the map is up, never before first paint; any failure is silent.
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
@@ -16,8 +16,18 @@ export type RiverSatellite = {
   s2_last?: string | null;
   s2_last_cloud?: number | null;
   s2_clear_last_30d?: number | null;
+  next_passes?: { at: string; platform?: string }[];
 };
-export type RiverWeather = { rain_mm_7d?: number | null; rain_mm_24h?: number | null; temp_c?: number | null };
+export type ForecastDay = { date: string; rain_mm: number | null; rain_prob: number | null; tmax_c?: number | null };
+export type RiverWeather = {
+  rain_mm_7d?: number | null;
+  rain_mm_24h?: number | null;
+  temp_c?: number | null;
+  forecast?: ForecastDay[];
+  rain_mm_next_3d?: number | null;
+};
+export type Discharge = { today_m3s: number | null; mean_m3s?: number | null; trend?: "sube" | "baja" | "estable" | string };
+export type FiresNear = { count_7d?: number | null; radius_km?: number | null };
 
 export type TileLayerMeta = {
   id: string;
@@ -37,6 +47,9 @@ export type Fuentes = {
   fires: FireCollection;
   satellite: Record<string, RiverSatellite>;
   weather: Record<string, RiverWeather>;
+  rivers: Record<string, { discharge?: Discharge | null }>;
+  fires_near_rivers: Record<string, FiresNear>;
+  summary: Record<string, string>;
   tile_layers: TileLayerMeta[];
   sources: Record<string, FeedSource>;
 };
@@ -61,6 +74,9 @@ function clean(x: unknown): Fuentes | null {
     fires: { type: "FeatureCollection", features: feats },
     satellite: byKey(d.satellite),
     weather: byKey(d.weather),
+    rivers: byKey(d.rivers),
+    fires_near_rivers: byKey(d.fires_near_rivers),
+    summary: Object.fromEntries(Object.entries(byKey(d.summary)).filter(([, v]) => typeof v === "string" && v.trim())),
     tile_layers: Array.isArray(d.tile_layers) ? d.tile_layers.filter((t) => t && typeof t.url === "string" && t.url.startsWith("https://")) : [],
     sources: d.sources ?? {},
   };
@@ -99,16 +115,65 @@ const dayFmt = new Intl.DateTimeFormat("es-PE", { weekday: "short", day: "numeri
 const fmtDay = (iso: string) => dayFmt.format(new Date(iso)).replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
 const valid = (iso?: string | null): iso is string => !!iso && !Number.isNaN(new Date(iso).getTime());
 
-/** "Radar Sentinel-1: último paso hace 2 días, próximo estimado lun 20 oct", or null without data. */
+const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+const fmtInt = (x: number) => Math.round(x).toLocaleString("es-PE");
+
+/** "Radar: último paso hace 2 días, próximo mar 28 oct (Sentinel-1D)", or null without data. */
 export function radarLine(s?: RiverSatellite): string | null {
-  if (!s || !valid(s.s1_last)) return null;
-  let out = `Radar Sentinel-1: último paso ${fmtAgo(s.s1_last)}`;
-  if (valid(s.s1_next_estimate) && new Date(s.s1_next_estimate).getTime() > Date.now()) out += `, próximo estimado ${fmtDay(s.s1_next_estimate)}`;
-  return out;
+  const next = nextPass(s);
+  const last = s && valid(s.s1_last) ? `último paso ${fmtAgo(s.s1_last)}` : "";
+  if (!next && !last) return null;
+  return `Radar: ${[last, next ? `próximo ${next}` : ""].filter(Boolean).join(", ")}`;
 }
 
-/** "Lluvia 7 días: 67 mm", or null without data. */
-export function rainLine(w?: RiverWeather): string | null {
-  if (!w || typeof w.rain_mm_7d !== "number" || !Number.isFinite(w.rain_mm_7d)) return null;
-  return `Lluvia 7 días: ${Math.round(w.rain_mm_7d)} mm`;
+/** "mar 28 oct (Sentinel-1D)": the first future radar pass, or null. */
+export function nextPass(s?: RiverSatellite): string | null {
+  const now = Date.now();
+  const p = (s?.next_passes ?? []).find((x) => valid(x?.at) && new Date(x.at).getTime() > now);
+  if (p) return `${fmtDay(p.at)}${p.platform ? ` (${p.platform})` : ""}`;
+  if (s && valid(s.s1_next_estimate) && new Date(s.s1_next_estimate).getTime() > now) return fmtDay(s.s1_next_estimate);
+  return null;
+}
+
+const TREND: Record<string, string> = { sube: "en subida", baja: "en bajada", estable: "estable" };
+/** "Caudal en subida, 156 m³/s", or null without data. */
+export function dischargeLine(d?: Discharge | null): string | null {
+  if (!d || !num(d.today_m3s)) return null;
+  const t = d.trend && TREND[d.trend] ? ` ${TREND[d.trend]}` : "";
+  return `Caudal${t}, ${fmtInt(d.today_m3s)} m³/s`;
+}
+
+/** "3 focos de calor a menos de 25 km en 7 días", or null when there are none. */
+export function firesLine(f?: FiresNear): string | null {
+  if (!f || !num(f.count_7d) || f.count_7d <= 0) return null;
+  const km = num(f.radius_km) ? Math.round(f.radius_km) : 25;
+  return `${f.count_7d === 1 ? "1 foco de calor" : `${fmtInt(f.count_7d)} focos de calor`} a menos de ${km} km en 7 días`;
+}
+
+const letterFmt = new Intl.DateTimeFormat("es-PE", { weekday: "narrow", timeZone: "UTC" });
+const shortDayFmt = new Intl.DateTimeFormat("es-PE", { weekday: "short", day: "numeric", timeZone: "UTC" });
+/** Forecast days with a rain amount, at most 7, each with its day letter ("L") and short day ("sáb 18"). */
+export function forecastDays(w?: RiverWeather): (ForecastDay & { rain_mm: number; letter: string; day: string })[] {
+  return (w?.forecast ?? [])
+    .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d.date) && num(d.rain_mm))
+    .slice(0, 7)
+    .map((d) => {
+      const t = new Date(`${d.date}T12:00:00Z`);
+      return { ...d, rain_mm: d.rain_mm as number, letter: letterFmt.format(t).toUpperCase(), day: shortDayFmt.format(t).replace(/[.,]/g, "") };
+    });
+}
+
+/** The summary without its "Río X: " lead, for places that already show the river name. */
+export const summaryBody = (s: string) => {
+  const b = s.replace(/^R[ií]o [^:]{1,40}:\s*/, "");
+  return b.charAt(0).toUpperCase() + b.slice(1);
+};
+
+/** The oldest fetched_at among the sources that loaded (how fresh the live data is at worst), or null. */
+export function oldestFetch(sources: Record<string, FeedSource>): string | null {
+  const t = Object.values(sources)
+    .filter((x) => x?.ok && valid(x.fetched_at))
+    .map((x) => x.fetched_at as string)
+    .sort();
+  return t[0] ?? null;
 }

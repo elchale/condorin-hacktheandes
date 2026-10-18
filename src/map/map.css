@@ -136,6 +136,15 @@
 .leaflet-tooltip.rt::before {
   display: none;
 }
+/* The label opens the river popup; a padded hit area for fingers. */
+.leaflet-tooltip.rt.leaflet-interactive {
+  cursor: pointer;
+  padding: 8px 4px;
+  margin-top: -8px;
+}
+.leaflet-tooltip.rt.leaflet-interactive:hover {
+  text-decoration: underline;
+}
 .leaflet-tooltip.rt-own,
 .is-sat .leaflet-tooltip.rt-own {
   color: #67e8f9;
@@ -217,6 +226,14 @@
 }
 .leaflet-popup-content .cp .cp-t {
   margin: 2px 24px 0 0;
+}
+.leaflet-popup-content .cp .rp-l {
+  margin: 6px 0 2px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #3f3f46;
 }
 .leaflet-popup-content .cp .cp-d {
   margin: 2px 0 10px;

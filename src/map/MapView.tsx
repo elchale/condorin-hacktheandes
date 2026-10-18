@@ -49,6 +49,14 @@ function popupHtml(f: DetectionFeature, p: MapViewProps, riverName: string): str
 
 /** Detections that share one map spot (often the same coordinate: a time series of one place). */
 type Spot = { ll: L.LatLng; items: DetectionFeature[]; same: boolean };
+/** River ring popup: the name, then the live lines (next radar pass, rain for 3 days) when they arrived. */
+function riverPopupHtml(name: string, lines?: string[]): string {
+  const body = lines?.length
+    ? `<ul class="rp-l">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
+    : `<p class="rp-l">Cargando lluvia y pasos de radar.</p>`;
+  return `<div class="cp"><p class="cp-t">Río ${escapeHtml(name)}</p>${body}</div>`;
+}
+
 const POP = { maxWidth: 300, minWidth: 250, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) };
 
 /** White card listing every scene at the spot, newest first; each row opens its detail. */
@@ -447,7 +455,9 @@ export default function MapView(props: MapViewProps) {
         fill: false,
         interactive: false,
       })
-        .bindTooltip(`Río ${escapeHtml(r.name)}`, { permanent: true, direction: "right", offset: [own ? 20 : 15, 0], className: own ? "rt rt-own" : "rt" })
+        // The label is the click target (the ring stays out of the way of the detections inside it).
+        .bindTooltip(`Río ${escapeHtml(r.name)}`, { permanent: true, interactive: true, direction: "right", offset: [own ? 20 : 15, 0], className: own ? "rt rt-own" : "rt" })
+        .bindPopup(() => riverPopupHtml(r.name, latest.current.riverInfo?.[r.slug]), { ...POP, maxWidth: 280, minWidth: 220 })
         .addTo(g);
     }
   }, [props.rivers, props.mineRivers]);

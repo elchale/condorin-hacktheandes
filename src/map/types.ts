@@ -40,6 +40,8 @@ export type MapViewProps = {
   tiles?: TileLayerMeta[];
   /** Called once when the map exists (the dashboard then fetches the live feeds). */
   onReady?: () => void;
+  /** Live lines for each river ring popup (next radar pass, rain for 3 days), by river slug. */
+  riverInfo?: Record<string, string[]>;
 };
 
 /** The hero layer (Amazon Mining Watch footprint), on by default and filtered by the year slider. */
