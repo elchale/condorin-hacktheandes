@@ -1,69 +1,111 @@
-name: ci
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  lint:
+    name: Ruff
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-      - name: Install (CPU torch from the PyTorch index, then the package)
-        run: |
-          python -m pip install --upgrade pip
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[serve,dev]"
-      - name: Ruff
-        run: |
-          ruff check .
-          ruff format --check .
-      - name: Pytest
-        env:
-          FAKE_MODEL: "1"
-        run: pytest
-
-  django-example:
-    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "django>=5.0,<6"
-      - name: Example receiver tests
-        working-directory: docs/examples/django_webhook_receiver
-        run: python runtests.py
+      - run: pip install "ruff>=0.5"
+      - run: ruff check .
+      - run: ruff format --check .
 
-  docker:
+  test:
+    name: pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Build CPU detector image (no model; runs with FAKE_MODEL=1)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # No torch needed: tests use the fake and stub detectors.
+      - run: pip install -e ".[job,trigger,notifier,dev]" google-cloud-tasks
+      - run: pytest --tb=short -q
+      - run: bash -n deploy/gcp-setup.sh && deploy/gcp-setup.sh --dry-run >/dev/null
+
+  # Pushes to main that pass lint and tests ship to Cloud Run, signed in as github-deployer (JSON key
+  # in the GCP_SA_KEY secret). Only the images change: env vars, service account, CPU and memory stay
+  # as deploy/gcp-setup.sh configured them. The Job image is only deployed when the repo variable
+  # MODEL_GCS_URI points at a published model (gs://.../models/<version>/), so a model-less image
+  # never replaces a working one.
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [lint, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    concurrency:
+      group: deploy-detector
+      cancel-in-progress: false
+    env:
+      REGISTRY: us-central1-docker.pkg.dev/wisecai-consultor-prod/cloud-run-source-deploy
+      REGION: us-central1
+      MODEL_GCS_URI: ${{ vars.MODEL_GCS_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build and push the trigger
+        run: |
+          IMAGE="$REGISTRY/condorin-detector-trigger:${{ github.sha }}"
+          docker build -f docker/trigger.Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
+          echo "TRIGGER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - uses: google-github-actions/deploy-cloudrun@v2
+        timeout-minutes: 6
+        with:
+          service: condorin-detector-trigger
+          region: ${{ env.REGION }}
+          image: ${{ env.TRIGGER_IMAGE }}
+
+      - name: Fetch the model
+        if: env.MODEL_GCS_URI != ''
         run: |
           mkdir -p model
-          docker build -f docker/detector.Dockerfile --build-arg VARIANT=cpu -t condorin-detector:ci .
-      - name: Healthcheck with the fake model
+          gcloud storage cp "${MODEL_GCS_URI%/}/*" model/
+          python3 -c "import json; c = json.load(open('model/model_card.json')); print('model', c['name'], c['version'])"
+          echo "MODEL_VERSION=$(python3 -c "import json; print(json.load(open('model/model_card.json'))['version'])")" >> "$GITHUB_ENV"
+      - name: Build and push the Job
+        if: env.MODEL_GCS_URI != ''
         run: |
-          docker run -d --name det -e FAKE_MODEL=1 -p 8080:8080 condorin-detector:ci
-          for i in $(seq 1 30); do curl -fs localhost:8080/healthz && break; sleep 2; done
-          curl -fs localhost:8080/readyz
-          docker logs det
-      - name: Build notifier image
-        run: docker build -f docker/notifier.Dockerfile -t condorin-notifier:ci .
-      - name: Deploy scripts (syntax + dry run)
+          IMAGE="$REGISTRY/condorin-detector:${{ github.sha }}-model${MODEL_VERSION}"
+          docker build -f docker/job.Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
+          echo "JOB_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - uses: google-github-actions/deploy-cloudrun@v2
+        if: env.MODEL_GCS_URI != ''
+        timeout-minutes: 6
+        with:
+          job: condorin-detector
+          region: ${{ env.REGION }}
+          image: ${{ env.JOB_IMAGE }}
+      - name: No model published
+        if: env.MODEL_GCS_URI == ''
+        run: echo "::warning::MODEL_GCS_URI is not set; the Job image was not deployed."
+
+      - name: Why the trigger revision failed
+        if: failure()
         run: |
-          bash -n deploy/deploy.sh && bash -n deploy/infra/setup.sh
-          PROJECT=ci INPUT_BUCKET=in RESULTS_BUCKET=out deploy/infra/setup.sh --dry-run
-          PROJECT=ci RESULTS_BUCKET=out DETECTOR_IMAGE=d NOTIFIER_IMAGE=n deploy/deploy.sh --dry-run
+          gcloud run services describe condorin-detector-trigger --region "$REGION" \
+            --format='yaml(status.conditions,status.latestCreatedRevisionName,status.latestReadyRevisionName)'

@@ -162,6 +162,35 @@ def write_bytes(uri: str, data: bytes, content_type: str = "application/octet-st
     )
 
 
+def write_once(uri: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+    """Create the object only if it does not exist yet and return its generation.
+
+    An existing object is kept as is (its generation is returned), so evidence that the backend
+    already pinned as `gs://bucket/obj#generation` is never replaced. Needs only
+    `storage.objects.create` + `get` (objectCreator + objectViewer).
+    """
+    p = parse_uri(uri)
+    if p.scheme == "file":
+        if not p.path.is_file():
+            write_bytes(uri, data, content_type)
+        return str(p.path.stat().st_mtime_ns)
+
+    def _do():
+        from google.api_core import exceptions as gexc
+
+        blob = _gcs().bucket(p.bucket).blob(p.obj)
+        try:
+            blob.upload_from_string(data, content_type, if_generation_match=0)
+        except gexc.PreconditionFailed:
+            existing = _gcs().bucket(p.bucket).get_blob(p.obj)
+            if existing is None:  # deleted in between: let the caller retry
+                raise Transient(f"{uri}: vanished after a precondition failure") from None
+            return str(existing.generation)
+        return str(blob.generation)
+
+    return _gcs_call(uri, _do)
+
+
 def write_json(uri: str, obj: Any) -> None:
     data = json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode()
     write_bytes(uri, data, "application/json")
