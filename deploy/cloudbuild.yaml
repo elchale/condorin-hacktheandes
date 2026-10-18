@@ -1,0 +1,74 @@
+# Build the detector (model baked in) and the notifier, push to Artifact Registry, deploy to Cloud Run.
+#
+#   gcloud builds submit --region=southamerica-west1 --config deploy/cloudbuild.yaml \
+#     --substitutions=_MODEL_BUCKET=<bucket>,_MODEL_VERSION=2026-10-r1,_RESULTS_BUCKET=<bucket>,_INPUT_BUCKET=<bucket>,_TAG=$(git rev-parse --short HEAD)
+#
+# Image tag = <code-version>-model<model-version>. Flags checked against `gcloud ... --help` (SDK 542);
+# Cloud Build regional availability in southamerica-west1: VERIFY.
+
+substitutions:
+  _REGION: southamerica-west1
+  _REPO: condorin
+  _MODEL_BUCKET: ""
+  _MODEL_VERSION: ""
+  _RESULTS_BUCKET: ""
+  _INPUT_BUCKET: ""
+  _VARIANT: cpu
+  _TAG: manual
+
+options:
+  dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - id: fetch-model
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        test -n "${_MODEL_BUCKET}" && test -n "${_MODEL_VERSION}" || { echo "set _MODEL_BUCKET and _MODEL_VERSION"; exit 1; }
+        mkdir -p model
+        gcloud storage cp "gs://${_MODEL_BUCKET}/models/${_MODEL_VERSION}/*" model/
+        test -f model/model_card.json
+
+  - id: build-detector
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - docker/detector.Dockerfile
+      - --build-arg
+      - VARIANT=${_VARIANT}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/detector:${_TAG}-model${_MODEL_VERSION}
+      - .
+
+  - id: build-notifier
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - docker/notifier.Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/notifier:${_TAG}
+      - .
+
+  - id: push-detector
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/detector:${_TAG}-model${_MODEL_VERSION}"]
+
+  - id: push-notifier
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/notifier:${_TAG}"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    env:
+      - PROJECT=${PROJECT_ID}
+      - REGION=${_REGION}
+      - RESULTS_BUCKET=${_RESULTS_BUCKET}
+      - DETECTOR_IMAGE=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/detector:${_TAG}-model${_MODEL_VERSION}
+      - NOTIFIER_IMAGE=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/notifier:${_TAG}
+    args: [deploy/deploy.sh]

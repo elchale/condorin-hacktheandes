@@ -33,3 +33,37 @@ jobs:
         env:
           FAKE_MODEL: "1"
         run: pytest
+
+  django-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "django>=5.0,<6"
+      - name: Example receiver tests
+        working-directory: docs/examples/django_webhook_receiver
+        run: python runtests.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CPU detector image (no model; runs with FAKE_MODEL=1)
+        run: |
+          mkdir -p model
+          docker build -f docker/detector.Dockerfile --build-arg VARIANT=cpu -t condorin-detector:ci .
+      - name: Healthcheck with the fake model
+        run: |
+          docker run -d --name det -e FAKE_MODEL=1 -p 8080:8080 condorin-detector:ci
+          for i in $(seq 1 30); do curl -fs localhost:8080/healthz && break; sleep 2; done
+          curl -fs localhost:8080/readyz
+          docker logs det
+      - name: Build notifier image
+        run: docker build -f docker/notifier.Dockerfile -t condorin-notifier:ci .
+      - name: Deploy scripts (syntax + dry run)
+        run: |
+          bash -n deploy/deploy.sh && bash -n deploy/infra/setup.sh
+          PROJECT=ci INPUT_BUCKET=in RESULTS_BUCKET=out deploy/infra/setup.sh --dry-run
+          PROJECT=ci RESULTS_BUCKET=out DETECTOR_IMAGE=d NOTIFIER_IMAGE=n deploy/deploy.sh --dry-run
