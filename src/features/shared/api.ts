@@ -19,11 +19,15 @@ export class ExpedienteError extends Error {
 
 const FALLBACK: ApiError = { message: "Algo falló. Inténtalo otra vez.", type: "unknown", field_errors: {} };
 const OFFLINE: ApiError = { ...FALLBACK, message: "Sin conexión. Revisa tu internet e inténtalo otra vez.", type: "offline" };
+const SLOW: ApiError = { ...FALLBACK, message: "La conexión está muy lenta. Inténtalo otra vez.", type: "timeout" };
+const TIMEOUT_MS = 20000;
 
 async function call<T>(path: string, method: string, body?: unknown, bearer?: string): Promise<{ status: number; data: T }> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(API_URL + path, {
@@ -32,9 +36,12 @@ async function call<T>(path: string, method: string, body?: unknown, bearer?: st
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       credentials: "omit",
+      signal: ctrl.signal,
     });
   } catch {
-    throw new ExpedienteError(0, OFFLINE);
+    throw new ExpedienteError(0, ctrl.signal.aborted ? SLOW : OFFLINE);
+  } finally {
+    clearTimeout(timer);
   }
   const data = await res.json().catch(() => null);
   // A dead bearer session signs the member out everywhere; pages that need one send them to /entrar.

@@ -554,7 +554,7 @@ export function Dashboard() {
             )}
             <div className="mt-6 space-y-1">
               <UpdatedLine generatedAt={data.generated_at} live={live} totals={data.totals} />
-              {liveAt && <p className="tnum px-4 text-xs text-muted">Datos en vivo actualizados {fmtAgo(liveAt)}</p>}
+              {liveAt && <p className="tnum px-4 text-xs text-muted">Datos en vivo actualizados {fmtAgo(liveAt, Date.now())}</p>}
             </div>
             <SourcesFooter layers={metas} live={liveCredits} />
           </div>

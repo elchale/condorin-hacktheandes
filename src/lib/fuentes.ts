@@ -121,7 +121,7 @@ const fmtInt = (x: number) => Math.round(x).toLocaleString("es-PE");
 /** "Radar: último paso hace 2 días, próximo mar 28 oct (Sentinel-1D)", or null without data. */
 export function radarLine(s?: RiverSatellite): string | null {
   const next = nextPass(s);
-  const last = s && valid(s.s1_last) ? `último paso ${fmtAgo(s.s1_last)}` : "";
+  const last = s && valid(s.s1_last) ? `último paso ${fmtAgo(s.s1_last, Date.now())}` : "";
   if (!next && !last) return null;
   return `Radar: ${[last, next ? `próximo ${next}` : ""].filter(Boolean).join(", ")}`;
 }

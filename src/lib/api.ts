@@ -50,7 +50,9 @@ export type ApiOptions = {
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeout ?? 20000);
-  opts.signal?.addEventListener("abort", () => ctrl.abort());
+  const onAbort = () => ctrl.abort();
+  if (opts.signal?.aborted) ctrl.abort();
+  else opts.signal?.addEventListener("abort", onAbort, { once: true });
   const headers: Record<string, string> = { Accept: "application/json", ...(opts.auth === false ? {} : authHeaders()), ...opts.headers };
   let body: BodyInit | undefined;
   if (opts.body !== undefined) {
@@ -68,6 +70,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     throw new ApiError("", aborted ? "timeout" : "network", 0);
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
   }
   const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) {

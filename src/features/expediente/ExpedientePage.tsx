@@ -1,5 +1,5 @@
 import { Skeleton } from "../shared/Skeleton";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
 import { ExpedienteError, loadExpediente, saveExpediente } from "../shared/api";
@@ -43,7 +43,11 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
 
   useEffect(load, [load]);
 
-  const save = useCallback(
+  // Blurring two fields quickly sends two PATCHes; run them in order so an older answer never
+  // replaces a newer one on screen (which looked like the second field had been lost).
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const send = useCallback(
     async (patch: Patch) => {
       setSaveState("saving");
       setNotice("");
@@ -70,6 +74,15 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
       }
     },
     [token, load],
+  );
+
+  const save = useCallback(
+    (patch: Patch): Promise<boolean> => {
+      const run = queue.current.then(() => send(patch));
+      queue.current = run;
+      return run;
+    },
+    [send],
   );
 
   const saveField = useCallback((name: string, value: string) => void save({ [name]: value } as Patch), [save]);

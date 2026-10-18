@@ -86,7 +86,8 @@ export function TimeTravel({ win, today, onChange }: { win: TimeWindow; today: s
           max={today}
           onChange={(e) => {
             const v = (e.currentTarget as HTMLInputElement).value;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(v)) onChange(v > today ? today : v);
+            // Chrome reports half typed years ("0020-10-18"): wait until the date is in range.
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= `${FIRST_YEAR}-01-01`) onChange(v > today ? today : v);
           }}
           aria-label="Elegir día"
           className="tnum min-h-11 w-full min-w-0 rounded-xl border border-line bg-white px-1 text-[13px] font-bold text-ink"

@@ -287,6 +287,9 @@ export default function MapView(props: MapViewProps) {
     const m = map.current;
     const g = detLayer.current;
     if (!m || !g) return;
+    // Removing a layer closes its popup: reopen the one being read after the redraw (refresh, zoom).
+    const reading = [...markers.current].find(([, mk]) => mk.isPopupOpen())?.[0];
+    if (reading != null && pendingPopup.current == null) pendingPopup.current = reading;
     g.clearLayers();
     markers.current.clear();
     spots.current.clear();
@@ -522,7 +525,7 @@ export default function MapView(props: MapViewProps) {
         maxNativeZoom: t.max_zoom,
         maxZoom: 18,
         opacity: t.opacity,
-        attribution: t.attribution,
+        attribution: escapeHtml(t.attribution ?? ""),
         detectRetina: false,
         updateWhenIdle: true,
         keepBuffer: 1,
@@ -560,6 +563,7 @@ export default function MapView(props: MapViewProps) {
     if (animate) {
       m.once("moveend", open);
       m.flyTo(ll, z, { duration: 0.9 });
+      return () => void m.off("moveend", open);
     } else {
       m.setView(ll, z);
       open();

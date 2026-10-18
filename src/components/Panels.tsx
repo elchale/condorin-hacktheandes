@@ -2,7 +2,7 @@ import { BRAND_NAME } from "../config";
 import { fmtAgo, fmtDayYear, fmtNum, fmtPct, fmtShortDate, fmtTime } from "../lib/format";
 import type { ActivityItem, DetectionFeature, LayerMeta } from "../types";
 import { DEFAULT_LAYERS, layerMinZoom, type ResolvedRiver } from "../map/types";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { dischargeLine, firesLine, forecastDays, radarLine, slugKey, summaryBody, type Fuentes, type RiverWeather } from "../lib/fuentes";
 
 export type DetFilter = "todas" | "alerta" | "mias";
@@ -309,6 +309,9 @@ export function LayersTab(props: {
   const main = metas.filter((m) => DEFAULT_LAYERS.includes(m.id));
   const more = metas.filter((m) => !DEFAULT_LAYERS.includes(m.id));
   const moreOn = more.some((m) => active.has(m.id)) || extras.some((x) => x.on);
+  // Open at first when a layer inside is on; after that the person decides (a controlled `open`
+  // snapped the section shut when they turned its last layer off).
+  const [moreOpenAtStart] = useState(moreOn);
   const moreCount = more.length + extras.length;
   return (
     <div className="px-4">
@@ -319,7 +322,7 @@ export function LayersTab(props: {
         ))}
       </ul>
       {moreCount > 0 && (
-        <details className="group mt-3" open={moreOn}>
+        <details className="group mt-3" open={moreOpenAtStart}>
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-1 text-sm font-bold [&::-webkit-details-marker]:hidden">
             Más capas ({moreCount})
             <span className="text-muted transition-transform group-open:rotate-180" aria-hidden>

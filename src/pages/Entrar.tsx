@@ -3,6 +3,7 @@ import { BRAND_NAME, PRIVACY_URL, RESEND_COOLDOWN_S, TERMS_URL } from "../config
 import { Brand } from "../components/TopBar";
 import { friendlyError, requestCode, signIn } from "../lib/api";
 import { saveSession } from "../lib/session";
+import { useSession } from "../lib/hooks";
 import { formatPhone, normalizePhone } from "../lib/brand";
 import { Link, navigate, useLocation } from "../router";
 
@@ -14,7 +15,7 @@ const textLink = "font-medium text-rojo-2 underline underline-offset-4 hover:tex
 
 /** Only same site paths ("/panel", "/expediente/abc"), never "//host" or absolute URLs. */
 function safeNext(next: string | null): string | null {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/entrar") ? next : null;
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") && !next.startsWith("/entrar") ? next : null;
 }
 
 export default function Entrar() {
@@ -28,6 +29,13 @@ export default function Entrar() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const signedIn = Boolean(useSession());
+
+  // Already signed in (an old tab, the back button): no second sign in, go where they were headed.
+  // Only on sign in state changes; the query string is read as it is then.
+  useEffect(() => {
+    if (signedIn) navigate(safeNext(search.get("next")) ?? "/panel", { replace: true });
+  }, [signedIn]);
 
   useEffect(() => {
     const prev = document.title;
