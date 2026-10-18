@@ -29,6 +29,8 @@ describe("days", () => {
     expect(w).toMatchObject({ from: "2026-10-16", to: "2026-10-18", isToday: true });
     expect(w.words).toBe("últimos 3 días (16 al 18 de octubre de 2026)");
     expect(w.chip).toBe("Últimos 3 días: 16 al 18 oct 2026");
+    expect(w.title).toBe("Solo se muestran los últimos 3 días");
+    expect(w.range).toBe("16 al 18 de octubre de 2026");
   });
 
   it("names a past window across a month boundary", () => {
@@ -36,6 +38,7 @@ describe("days", () => {
     expect(w).toMatchObject({ from: "2026-09-30", to: "2026-10-02", isToday: false });
     expect(w.words).toBe("3 días hasta el 2 de octubre de 2026");
     expect(w.chip).toBe("3 días hasta el 2 oct 2026");
+    expect(w.title).toBe("Solo se muestran 3 días, hasta el 2 de octubre de 2026");
     expect(makeWindow("2026-10-02", "2026-10-02").words).toBe("últimos 3 días (30 de septiembre al 2 de octubre de 2026)");
   });
 

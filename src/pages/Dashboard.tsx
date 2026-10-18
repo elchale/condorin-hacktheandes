@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FIRST_YEAR, LAST_YEAR, RIVER_FALLBACK } from "../config";
-import { makeWindow, nearestDays, shortDay, todayLima } from "../lib/days";
+import { makeWindow, nearestDays, shortDay, todayLima, WINDOW_DAYS } from "../lib/days";
 import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter } from "../components/Panels";
 import { fmtAgo, limaDay } from "../lib/format";
 import { DataDays, Headline, Kpis, Legend, TimeTravel, UpdatedLine } from "../components/MapPanelHeader";
@@ -182,7 +182,7 @@ export function Dashboard() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "detecciones", label: "Detecciones" },
+    { id: "detecciones", label: `Detecciones (${WINDOW_DAYS} días)` },
     { id: "rios", label: "Ríos" },
     ...(metas.length || extras.length ? [{ id: "capas" as Tab, label: "Capas" }] : []),
   ];
@@ -293,7 +293,7 @@ export function Dashboard() {
           </button>
           <div ref={peekBox} className="shrink-0 space-y-3 lg:pt-5">
             <div className="touch-none space-y-3 lg:touch-auto" {...dragProps}>
-              <Headline words={win.words} />
+              <Headline win={win} />
             </div>
             <TimeTravel win={win} today={today} onChange={travel} />
             <Kpis detections={inTime.length} alertsSent={data.totals.alerts_sent} ha={ha} onDetections={showDetections} />

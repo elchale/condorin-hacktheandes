@@ -54,14 +54,35 @@ export type TimeWindow = {
   words: string;
   /** For the map chip: "Últimos 3 días: 16 al 18 oct 2026" or "3 días hasta el 20 jul 2026". */
   chip: string;
+  /** For the panel notice: "Solo se muestran los últimos 3 días" or "Solo se muestran 3 días, hasta el 20 de julio de 2026". */
+  title: string;
+  /** The days covered, in full: "16 al 18 de octubre de 2026". */
+  range: string;
 };
 
 export function makeWindow(end: string, today: string): TimeWindow {
   const from = addDays(end, -(WINDOW_DAYS - 1));
   const isToday = end === today;
+  const range = rangeLong(from, end);
   return isToday
-    ? { from, to: end, isToday, words: `últimos ${WINDOW_DAYS} días (${rangeLong(from, end)})`, chip: `Últimos ${WINDOW_DAYS} días: ${rangeShort(from, end)}` }
-    : { from, to: end, isToday, words: `${WINDOW_DAYS} días hasta el ${longDay(end)}`, chip: `${WINDOW_DAYS} días hasta el ${shortDay(end, true)}` };
+    ? {
+        from,
+        to: end,
+        isToday,
+        range,
+        words: `últimos ${WINDOW_DAYS} días (${range})`,
+        chip: `Últimos ${WINDOW_DAYS} días: ${rangeShort(from, end)}`,
+        title: `Solo se muestran los últimos ${WINDOW_DAYS} días`,
+      }
+    : {
+        from,
+        to: end,
+        isToday,
+        range,
+        words: `${WINDOW_DAYS} días hasta el ${longDay(end)}`,
+        chip: `${WINDOW_DAYS} días hasta el ${shortDay(end, true)}`,
+        title: `Solo se muestran ${WINDOW_DAYS} días, hasta el ${longDay(end)}`,
+      };
 }
 
 /** The days with data closest to the window (before or after), oldest first. */
