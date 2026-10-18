@@ -1,14 +1,15 @@
-import type { Period } from "../config";
+import { FIRST_YEAR, LAST_YEAR } from "../config";
+import { addDays, shortDay, todayLima, type TimeWindow } from "../lib/days";
 import { fmtAgo, fmtNum } from "../lib/format";
 import type { Totals } from "../types";
 
 /** One plain sentence that says what the map shows, then the period in words. */
-export function Headline({ period }: { period: Period }) {
+export function Headline({ words }: { words: string }) {
   return (
     <div className="px-4">
       <h1 className="text-[17px] font-extrabold leading-snug tracking-tight lg:text-lg">Minería ilegal detectada en la Amazonía peruana</h1>
       <p className="mt-0.5 text-[13px] text-muted">
-        Mostrando: <strong className="font-bold text-ink">{period.words}</strong>
+        Mostrando: <strong className="font-bold text-ink">{words}</strong>
       </p>
     </div>
   );
@@ -19,7 +20,7 @@ export function Kpis({ detections, alertsSent, ha, onDetections }: { detections:
   const tiles = [
     { label: "Dragas detectadas", value: detections, tone: "text-rojo" },
     { label: "Alertas enviadas por WhatsApp", value: alertsSent, tone: "text-ink" },
-    { label: "Hectáreas de huella minera", value: ha, tone: "text-ink" },
+    { label: `Hectáreas de huella minera, ${FIRST_YEAR} a ${LAST_YEAR}`, value: ha, tone: "text-ink" },
   ];
   return (
     <dl className="grid grid-cols-3 gap-2 px-4">
@@ -50,31 +51,82 @@ export function Kpis({ detections, alertsSent, ha, onDetections }: { detections:
   );
 }
 
-/** The single time control: a labelled segmented control. */
-export function PeriodSelector({ periods, value, onChange }: { periods: Period[]; value: string; onChange: (id: string) => void }) {
+const stepBtn =
+  "min-h-11 whitespace-nowrap rounded-xl bg-panel-2 px-2 text-[13px] font-bold text-ink hover:bg-zinc-200/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-panel-2";
+
+/**
+ * "Viaje en el tiempo": the single time control. The map shows the 3 days ending on the chosen day
+ * (today by default). Day buttons step one day, the native date input jumps, "Hoy" comes back.
+ */
+export function TimeTravel({ win, today, onChange }: { win: TimeWindow; today: string; onChange: (day: string) => void }) {
+  const end = win.to;
   return (
-    <fieldset className="px-4">
-      <legend className="label-caps mb-1.5">Periodo</legend>
-      <div className="grid rounded-xl bg-panel-2 p-1" style={{ gridTemplateColumns: `repeat(${periods.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label="Periodo">
-        {periods.map((p) => {
-          const on = p.id === value;
+    <div className="px-4" role="group" aria-labelledby="viaje-titulo">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p id="viaje-titulo" className="label-caps">
+          Viaje en el tiempo
+        </p>
+        <button
+          type="button"
+          aria-pressed={win.isToday}
+          onClick={() => onChange(today)}
+          className={`min-h-9 rounded-full px-3.5 text-xs font-bold ${win.isToday ? "bg-ink text-white" : "bg-rojo text-white hover:bg-rojo/90"}`}
+        >
+          {win.isToday ? "Hoy" : "Volver a hoy"}
+        </button>
+      </div>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-1.5">
+        <button type="button" className={stepBtn} onClick={() => onChange(addDays(end, -1))} aria-label="Día anterior">
+          <span aria-hidden>‹ </span>Día anterior
+        </button>
+        <input
+          type="date"
+          value={end}
+          min={`${FIRST_YEAR}-01-01`}
+          max={today}
+          onChange={(e) => {
+            const v = (e.currentTarget as HTMLInputElement).value;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v)) onChange(v > today ? today : v);
+          }}
+          aria-label="Elegir día"
+          className="tnum min-h-11 w-full min-w-0 rounded-xl border border-line bg-white px-1 text-[13px] font-bold text-ink"
+        />
+        <button type="button" className={stepBtn} disabled={end >= today} onClick={() => onChange(addDays(end, 1))} aria-label="Día siguiente">
+          Día siguiente<span aria-hidden> ›</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Days that have detections, newest first, each a button that travels there. A dot marks them. */
+export function DataDays({ days, win, onPick }: { days: { day: string; n: number }[]; win: TimeWindow; onPick: (day: string) => void }) {
+  if (!days.length) return null;
+  const year = Number(todayLima().slice(0, 4));
+  return (
+    <div className="px-4">
+      <p className="mb-1 text-[11px] font-medium text-muted">Días con detecciones (toca uno para ir)</p>
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+        {days.map(({ day, n }) => {
+          const on = day >= win.from && day <= win.to;
           return (
             <button
-              key={p.id}
+              key={day}
               type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onChange(p.id)}
-              className={`min-h-10 whitespace-nowrap rounded-lg px-1 text-[13px] font-bold transition-colors ${
-                on ? "bg-white text-ink shadow-[0_1px_3px_rgba(24,24,27,.18)]" : "text-muted hover:text-ink"
+              aria-pressed={on}
+              onClick={() => onPick(day)}
+              className={`tnum flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold ${
+                on ? "border-ink bg-ink text-white" : "border-line text-ink hover:bg-panel-2"
               }`}
             >
-              {p.label}
+              <span className="size-2 rounded-full bg-rojo" aria-hidden />
+              {shortDay(day, Number(day.slice(0, 4)) !== year)}
+              <span className={on ? "text-white/75" : "text-muted"}>({n})</span>
             </button>
           );
         })}
       </div>
-    </fieldset>
+    </div>
   );
 }
 
@@ -92,7 +144,7 @@ export function Legend({ footprint, anp, extra = [] }: { footprint: boolean; anp
         <li className="flex items-center gap-2">
           <span className="size-3.5 shrink-0 rounded-[4px] bg-huella ring-1 ring-yellow-700/60" aria-hidden />
           <span>
-            <strong className="font-bold">Amarillo:</strong> huella minera acumulada (Amazon Mining Watch)
+            <strong className="font-bold">Amarillo:</strong> Huella minera acumulada {FIRST_YEAR} a {LAST_YEAR} (Amazon Mining Watch)
           </span>
         </li>
       )}

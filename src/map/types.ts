@@ -26,6 +26,8 @@ export type MapViewProps = {
   /** The footprint layer shows these years [from, to] (inclusive), the newest year brighter. */
   years: [number, number];
   saveData: boolean;
+  /** Lima day ("2026-10-18") whose scenes get the soft pulse ring: the last day of the time window. */
+  pulseDay?: string;
   command: MapCommand | null;
   onSelect: (id: number) => void;
   /** Reports the zoom after every change (the dashboard shows the "Acércate" hint). */

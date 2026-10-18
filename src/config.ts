@@ -42,21 +42,3 @@ export const FOOTPRINT_HA: Record<number, number> = {
   2026: 25967,
 };
 
-/** The one time control: it filters the detections and the mining footprint together. */
-export type Period = { id: string; label: string; words: string; years: [number, number]; days?: number };
-/**
- * Options built from the years that have detections: "30 días", the two newest years with data,
- * and "Todo" (the default, so a time series of one spot never vanishes behind a short window).
- */
-export function buildPeriods(detectionYears: number[]): Period[] {
-  const years = [...new Set(detectionYears.filter((y) => y >= FIRST_YEAR && y <= LAST_YEAR))].sort((a, b) => b - a);
-  const shown = (years.length ? years : [LAST_YEAR]).slice(0, 2);
-  const first = Math.min(FIRST_YEAR, ...years);
-  return [
-    { id: "30d", label: "30 días", words: "últimos 30 días", years: [LAST_YEAR, LAST_YEAR], days: 30 },
-    ...shown.map((y): Period => ({ id: `y${y}`, label: String(y), words: `solo ${y}`, years: [y, y] })),
-    { id: "todo", label: "Todo", words: `todo el periodo, ${first} a ${LAST_YEAR}`, years: [first, LAST_YEAR] },
-  ];
-}
-export const PERIODS: Period[] = buildPeriods([LAST_YEAR - 1, LAST_YEAR]);
-export const DEFAULT_PERIOD = "todo";

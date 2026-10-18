@@ -32,6 +32,9 @@ export function DetectionList(props: {
   signedIn: boolean;
   mineReady: boolean;
   onPick: (id: number) => void;
+  /** Days with data closest to an empty window, offered as buttons ("2026-10-16" and its label). */
+  nearDays?: { day: string; label: string }[];
+  onJumpDay?: (day: string) => void;
 }) {
   const { items, names, mine, selected, filter, setFilter, signedIn, onPick } = props;
   return (
@@ -42,11 +45,33 @@ export function DetectionList(props: {
         {signedIn && <Chip on={filter === "mias"} onClick={() => setFilter("mias")}>Mis detecciones</Chip>}
       </div>
       {items.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-muted">
-          {filter === "mias" && !props.mineReady
-            ? "Conectando para ver los ríos de tu ONG."
-            : "No hay detecciones en este periodo."}
-        </p>
+        filter === "mias" && !props.mineReady ? (
+          <p className="px-4 py-6 text-sm text-muted">Conectando para ver los ríos de tu ONG.</p>
+        ) : filter !== "todas" ? (
+          <p className="px-4 py-6 text-sm text-muted">Ninguna detección de este tipo en estos 3 días. Prueba otro día.</p>
+        ) : (
+          <div className="px-4 py-5">
+            <p className="text-sm font-semibold text-ink">Sin detecciones en estos 3 días. Prueba otro día.</p>
+            {!!props.nearDays?.length && (
+              <>
+                <p className="mt-2 text-xs text-muted">Días cercanos con detecciones:</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {props.nearDays.map((d) => (
+                    <button
+                      key={d.day}
+                      type="button"
+                      onClick={() => props.onJumpDay?.(d.day)}
+                      className="tnum flex min-h-11 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-bold text-ink hover:bg-panel-2"
+                    >
+                      <span className="size-2 rounded-full bg-rojo" aria-hidden />
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )
       ) : (
         <ul className="divide-y divide-line border-y border-line">
           {items.map((f) => {

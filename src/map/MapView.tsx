@@ -301,8 +301,8 @@ export default function MapView(props: MapViewProps) {
       if (near) near.items.push(f);
       else groups.push({ pt, items: [f] });
     }
-    // Only scenes captured today (Lima) get the soft pulse ring, one per place.
-    const today = limaDay(Date.now());
+    // Only scenes captured on the window's last day (today by default) get the soft pulse ring, one per place.
+    const today = p.pulseDay ?? limaDay(Date.now());
     const pulses = new Map<string, [number, number]>();
     for (const f of p.detections) {
       if (limaDay(f.properties.captured_at) !== today) continue;
@@ -532,7 +532,7 @@ export default function MapView(props: MapViewProps) {
     }
   }, [props.tiles]);
 
-  useEffect(drawDetections, [props.detections, props.rivers, props.mineRivers, props.saveData]);
+  useEffect(drawDetections, [props.detections, props.rivers, props.mineRivers, props.saveData, props.pulseDay]);
   useEffect(syncStatic, [props.layers]);
   useEffect(styleYears, [props.years[0], props.years[1]]);
 

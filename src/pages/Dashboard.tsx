@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { buildPeriods, DEFAULT_PERIOD, FOOTPRINT_HA, RIVER_FALLBACK } from "../config";
+import { FIRST_YEAR, FOOTPRINT_HA, LAST_YEAR, RIVER_FALLBACK } from "../config";
+import { makeWindow, nearestDays, shortDay, todayLima } from "../lib/days";
 import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
 import { forecastDays, nextPass, oldestFetch, slugKey, useFuentes } from "../lib/fuentes";
-import { nowMs } from "../lib/clock";
-import { fmtAgo, fmtNum } from "../lib/format";
-import { Headline, Kpis, Legend, PeriodSelector, UpdatedLine } from "../components/MapPanelHeader";
+import { fmtAgo, fmtNum, limaDay } from "../lib/format";
+import { DataDays, Headline, Kpis, Legend, TimeTravel, UpdatedLine } from "../components/MapPanelHeader";
 import { TopBar } from "../components/TopBar";
 import { WelcomeOverlay } from "../components/WelcomeOverlay";
 import { useMapa, useMedia, useSession } from "../lib/hooks";
@@ -21,6 +21,7 @@ type Tab = "detecciones" | "rios" | "capas";
 const LAYERS_KEY = "condorin.capas";
 const HANDLE = 24;
 const FIRE_COLOR = "#f97316";
+const FOOTPRINT_YEARS: [number, number] = [FIRST_YEAR, LAST_YEAR];
 
 function resolveRivers(data: Mapa): ResolvedRiver[] {
   const out: ResolvedRiver[] = [];
@@ -65,7 +66,8 @@ export function Dashboard() {
   const [mapWanted, setMapWanted] = useState(false);
   const [welcome, setWelcome] = useState(() => search.get("bienvenida") === "1");
   const [zoom, setZoom] = useState(0);
-  const [periodId, setPeriodId] = useState(DEFAULT_PERIOD);
+  // The time window ends on this Lima day; null follows today (the default: the last 3 days).
+  const [endDay, setEndDay] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
   const [tilesLoading, setTilesLoading] = useState(false);
 
@@ -75,20 +77,33 @@ export function Dashboard() {
   const images = useMemo(() => Object.fromEntries(data.images.map((i) => [i.id, i])) as Record<number, SceneImage>, [data]);
   const mineList = useMemo(() => (session ? data.mine?.ong.rivers ?? [] : []), [data, session]);
   const mine = useMemo(() => new Set(mineList), [mineList]);
-  const periods = useMemo(() => buildPeriods(data.detections.features.map((f) => Number(f.properties.captured_at.slice(0, 4)))), [data]);
-  const period = periods.find((p) => p.id === periodId) ?? periods[periods.length - 1];
   const sorted = useMemo(
     () => [...data.detections.features].sort((a, b) => b.properties.captured_at.localeCompare(a.properties.captured_at)),
     [data],
   );
-  const inTime = useMemo(() => {
-    const [from, to] = period.years;
-    const since = period.days ? nowMs() - period.days * 86400_000 : 0;
-    return sorted.filter((f) => {
-      const y = Number(f.properties.captured_at.slice(0, 4));
-      return y >= from && y <= to && (!since || new Date(f.properties.captured_at).getTime() >= since);
-    });
-  }, [sorted, period]);
+  // Lima day of every scene, and the days that have data (newest first, with how many scenes).
+  const dayOf = useMemo(() => new Map(sorted.map((f) => [f.properties.id, limaDay(f.properties.captured_at)])), [sorted]);
+  const dataDays = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const d of dayOf.values()) c.set(d, (c.get(d) ?? 0) + 1);
+    return [...c].map(([day, n]) => ({ day, n })).sort((a, b) => b.day.localeCompare(a.day));
+  }, [dayOf]);
+  const today = todayLima();
+  const end = endDay && endDay < today ? endDay : today;
+  const win = useMemo(() => makeWindow(end, today), [end, today]);
+  const travel = (day: string) => setEndDay(day >= today ? null : day);
+  const inTime = useMemo(
+    () =>
+      sorted.filter((f) => {
+        const d = dayOf.get(f.properties.id) ?? "";
+        return d >= win.from && d <= win.to;
+      }),
+    [sorted, dayOf, win],
+  );
+  const nearDays = useMemo(
+    () => (inTime.length ? [] : nearestDays(dataDays.map((d) => d.day), win).map((day) => ({ day, label: shortDay(day, true) }))),
+    [inTime, dataDays, win],
+  );
   const visible = useMemo<DetectionFeature[]>(() => {
     if (filter === "alerta") return inTime.filter((f) => f.properties.alerting);
     if (filter === "mias") return inTime.filter((f) => mine.has(f.properties.river));
@@ -181,10 +196,8 @@ export function Dashboard() {
     for (const f of fc.features) t[Number(f.properties?.year)] = Number(f.properties?.area_ha) || 0;
     return t;
   }, [layerData]);
-  const ha = useMemo(
-    () => Object.entries(yearHa).reduce((s, [y, v]) => (Number(y) >= period.years[0] && Number(y) <= period.years[1] ? s + v : s), 0),
-    [yearHa, period],
-  );
+  // The footprint is yearly and cumulative: the time window never filters it.
+  const ha = useMemo(() => Object.values(yearHa).reduce((s, v) => s + v, 0), [yearHa]);
 
   // Live feeds (fires, Global Forest Watch tiles, river radar and rain): fetched once the map is up.
   const [mapReady, setMapReady] = useState(false);
@@ -349,7 +362,7 @@ export function Dashboard() {
     if (!desktop) setSnap(0);
   };
 
-  // The KPI zooms to the detections in the period (the map opens on the whole Amazon).
+  // The KPI zooms to the detections in the time window (the map opens on the whole Amazon).
   const showDetections = () => {
     if (!visible.length) return;
     wantMap();
@@ -408,7 +421,8 @@ export function Dashboard() {
                 signedIn={!!session}
                 basemap={basemap}
                 layers={activeLayers}
-                years={period.years}
+                years={FOOTPRINT_YEARS}
+                pulseDay={win.to}
                 saveData={saveData}
                 command={command}
                 onSelect={setSelected}
@@ -433,7 +447,7 @@ export function Dashboard() {
               </button>
             </div>
             <p className="pointer-events-auto flex min-h-11 items-center rounded-xl bg-white/95 px-3 text-[13px] font-bold text-ink shadow-[0_2px_10px_rgba(24,24,27,.18)]">
-              {period.words.charAt(0).toUpperCase() + period.words.slice(1)}
+              {win.chip}
             </p>
             <button
               type="button"
@@ -482,10 +496,11 @@ export function Dashboard() {
           </button>
           <div ref={peekBox} className="shrink-0 space-y-3 lg:pt-5">
             <div className="touch-none space-y-3 lg:touch-auto" {...dragProps}>
-              <Headline period={period} />
-              <Kpis detections={inTime.length} alertsSent={data.totals.alerts_sent} ha={ha} onDetections={showDetections} />
+              <Headline words={win.words} />
             </div>
-            <PeriodSelector periods={periods} value={period.id} onChange={setPeriodId} />
+            <TimeTravel win={win} today={today} onChange={travel} />
+            <Kpis detections={inTime.length} alertsSent={data.totals.alerts_sent} ha={ha} onDetections={showDetections} />
+            <DataDays days={dataDays} win={win} onPick={travel} />
           </div>
           {currentTab !== "rios" && (
             <div className="shrink-0 pt-3">
@@ -529,6 +544,8 @@ export function Dashboard() {
                 signedIn={!!session}
                 mineReady={!!data.mine}
                 onPick={pickDetection}
+                nearDays={nearDays}
+                onJumpDay={travel}
               />
             )}
             {currentTab === "rios" && <RiverList rivers={rivers} mine={mine} onPick={pickRiver} feeds={feeds} focus={riverFocus} />}
