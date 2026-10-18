@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BRAND_NAME, PANEL_URL } from "../config";
 import { useSession } from "../lib/hooks";
-import { clearToken } from "../lib/session";
+import { signOut } from "../lib/api";
 import { firstName } from "../lib/format";
 import { Link } from "../router";
 import { loadAcerca, loadEntrar, loadPanel } from "../routes";
@@ -69,8 +69,8 @@ export function TopBar({ back = false }: { back?: boolean }) {
                     role="menuitem"
                     type="button"
                     onClick={() => {
-                      clearToken();
                       setOpen(false);
+                      void signOut();
                     }}
                     className="mt-3 min-h-11 w-full rounded-md border border-line text-left px-3 hover:bg-panel-2"
                   >
