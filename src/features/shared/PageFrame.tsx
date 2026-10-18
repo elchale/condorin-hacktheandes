@@ -11,6 +11,12 @@ type Props = {
   children: ReactNode;
 };
 
+/**
+ * Link pages (evento, expediente) work with the link token alone. Going to the panel is an explicit
+ * choice that goes through the WhatsApp code sign in, so a forwarded link never opens a full session.
+ */
+export const PANEL_SIGN_IN = { href: "/entrar?next=/panel", label: "Entrar a mi panel" };
+
 /** The SPA top bar plus a slim bar with "Volver al mapa", shared by the panel, evento and expediente pages. */
 export function PageFrame({ status, back, width = "narrow", children }: Props) {
   const max = width === "wide" ? "max-w-5xl" : "max-w-2xl";

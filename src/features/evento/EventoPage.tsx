@@ -1,15 +1,15 @@
 import { ApiError } from "../../lib/api";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "../../lib/hooks";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
 import { loadEvento, type Evento } from "../shared/api";
 import { Icon } from "../shared/Icon";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
 import { Skeleton } from "../shared/Skeleton";
-import { PageFrame } from "../shared/PageFrame";
+import { PageFrame, PANEL_SIGN_IN } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
 import { card, outlineButton, primaryButton } from "../shared/ui";
-import { useLinkSignIn } from "../shared/useLinkSignIn";
 
 /** What to do next with this event, as one button to the expediente page. */
 function nextAction(e: Evento["expediente"]) {
@@ -32,7 +32,8 @@ export default function EventoPage({ token: tokenProp }: { token?: string }) {
   const token = routeToken(tokenProp, "/evento");
   const [data, setData] = useState<Evento | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
-  const { signedIn, overlay } = useLinkSignIn(token);
+  // The link token opens this page on its own; the panel needs a real sign in (WhatsApp code).
+  const signedIn = Boolean(useSession());
 
   const load = useCallback(() => {
     loadEvento(token)
@@ -49,10 +50,9 @@ export default function EventoPage({ token: tokenProp }: { token?: string }) {
 
   return (
     <PageFrame
-      back={signedIn ? { href: "/panel", label: "Todos los eventos" } : undefined}
+      back={signedIn ? { href: "/panel", label: "Todos los eventos" } : PANEL_SIGN_IN}
       status={data && <span className="text-muted">{data.ong.name}</span>}
     >
-      {overlay}
       <div className="space-y-4">
         <OpenInBrowser token={token} />
 
@@ -122,9 +122,13 @@ export default function EventoPage({ token: tokenProp }: { token?: string }) {
                   {action.button}
                   <Icon name="arrow" className="size-5" />
                 </Link>
-                {signedIn && (
+                {signedIn ? (
                   <Link href="/panel" className={`${outlineButton} mt-3 w-full`}>
                     Ver todos los eventos
+                  </Link>
+                ) : (
+                  <Link href={PANEL_SIGN_IN.href} className={`${outlineButton} mt-3 w-full`}>
+                    {PANEL_SIGN_IN.label}
                   </Link>
                 )}
               </section>
