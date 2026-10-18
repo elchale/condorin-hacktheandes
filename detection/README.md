@@ -54,8 +54,19 @@ Logs are JSON for Cloud Logging. Each task ends with
 and writes `gs://river-images/reports/<execution>/task-NNN.json` listing every image it did not report and
 why. The execution exits non-zero when any image failed.
 
-The backend alerts only for `confidence >= 0.7` (`ALERT_MIN_CONFIDENCE`) and scenes captured within the
+The backend alerts only for `confidence >= 0.5` (`ALERT_MIN_CONFIDENCE`) and scenes captured within the
 last 7 days; older or weaker detections are stored and mapped without alerting.
+
+### Final validation (TypeSafe Jev)
+
+Every detection with confidence **≥ 0.5** (`JEV_TRIGGER_CONFIDENCE`), the level at which the backend
+alerts, must be confirmed by [TypeSafe Jev](https://docs.typesafe.ai), a System One model, before it is
+reported. Per scene the Job sends one request with a 384 px crop centred on each candidate (upscaled to
+768 px) and one yes/no ("Noul") question per crop: is the object at the centre a mining dredge or barge?
+A candidate is kept when Jev's answer is **≥ 0.7** (`JEV_MIN_NOUL`). Rejected candidates are left out of
+the backend report and listed under `jev_rejections` in the run report; weaker detections (below 0.5) are
+reported as before, without Jev. If Jev cannot answer, the scene is not reported (`jev_unavailable`) and a
+re-run retries it. Details: [`docs/backend-contract.md`](docs/backend-contract.md#final-validation-typesafe-jev).
 
 ## Quickstart (fake model, no GCP)
 
@@ -80,7 +91,10 @@ Job (`src/condorin/job/config.py`): `PREFIX` (set per execution by the trigger),
 `WEBHOOK_MODE` (`post` in production, `log` for dry runs), `WEBHOOK_URL`, `MIN_CONFIDENCE`,
 `DEFAULT_SATELLITE`, `CROPS_PREFIX`, `REPORTS_PREFIX`, `TASK_BUDGET_S`, `MAX_IMAGES`, `MODEL_DIR`. Auth is
 a Google ID token of the runtime SA with audience `WEBHOOK_URL`. `DETECTIONS_SHARED_SECRET` (from Secret
-Manager, never in the repo) is an optional fallback.
+Manager, never in the repo) is an optional fallback. Jev: `JEV_ENABLED`, `TYPESAFE_API_KEY` (Secret
+Manager `typesafe-api-key`, never in the repo), `JEV_MODEL` (pinned, `jev-1.13.0`),
+`JEV_TRIGGER_CONFIDENCE` (0.5), `JEV_MIN_NOUL` (0.7), `JEV_MAX_CANDIDATES` (20 per scene), `JEV_CROP_PX`,
+`JEV_UPSCALE`, `JEV_TIMEOUT_S`, `JEV_MAX_RETRIES`.
 
 Trigger (`src/condorin/trigger/app.py`): `GCP_PROJECT`, `GCP_REGION`, `JOB_NAME`, `INPUT_BUCKET`,
 `CHECK_PREFIX`, `IMAGES_PER_TASK` (default 200), `MAX_TASKS` (default 10). It runs

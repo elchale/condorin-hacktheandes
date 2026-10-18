@@ -81,6 +81,7 @@ non-zero). Reason codes appear in the logs and in `failures_by_reason`:
 | `storage` | GCS read or crop write failed |
 | `backend_<status>` / `backend_unreachable` | the backend refused the report or could not be reached |
 | `not_started` | the task reached its time budget (5 min before its timeout) first; a re-run picks it up |
+| `jev_unavailable` | Jev could not confirm the scene's strong detections (after retries, or the key/request was refused) |
 
 Each task writes every one of these to `gs://<bucket>/reports/<execution>/task-NNN.json`
 (`not_reported`: object, reason, detail), next to its summary.
@@ -98,5 +99,64 @@ The backend deduplicates by `Idempotency-Key`, so re-running a prefix never crea
 alerts. Because the key has no model version, a newer model re-processing the same image generation is
 seen as a duplicate.
 
-The backend alerts only for `confidence >= 0.7` (`ALERT_MIN_CONFIDENCE`) on scenes captured within the last
-7 days; older or weaker detections are stored and mapped without alerting.
+The backend alerts only for `confidence >= 0.5` (`ALERT_MIN_CONFIDENCE`) on scenes captured within the last
+7 days; older or weaker detections are stored and mapped without alerting. With the Jev validator on, every
+reported detection at or above 0.5 has been confirmed by Jev (below).
+
+## Final validation (TypeSafe Jev)
+
+Code: `src/condorin/job/validator.py`. Turned on by `JEV_ENABLED=true` (set by `deploy/gcp-setup.sh` when
+the `typesafe-api-key` secret exists).
+
+**Which detections.** Positive-class detections with confidence ≥ `JEV_TRIGGER_CONFIDENCE` (0.5, the
+backend's alert level), at most `JEV_MAX_CANDIDATES` (20) per scene, strongest first; candidates beyond
+the cap are not sent and are not reported. Weaker detections skip Jev and are reported as before.
+
+**Request** (one per scene; [API reference](https://docs.typesafe.ai/api), [images](https://docs.typesafe.ai/images)):
+
+```
+POST https://api.typesafe.ai/v1/systemone
+Authorization: Bearer <TYPESAFE_API_KEY>
+TypeSafe-Danger-Zone-Images: true            # required for any request carrying an image
+Content-Type: multipart/form-data; boundary=… (part "request" = JSON body, one PNG part per crop)
+```
+
+```json
+{
+  "model": "jev-1.13.0",
+  "state": {
+    "context": "Each crop is an overhead satellite image (about 0.5 m per pixel) of a river in the Peruvian Amazon, …",
+    "candidates": [{"crop": "crop-<uuid>"}, {"crop": "crop-<uuid>"}]
+  },
+  "assets": {"crop-<uuid>": {"type": "image", "part": "image-0", "format": "png"}, "…": {}},
+  "questions": {
+    "candidate_0": {
+      "type": "noul",
+      "instructions": "Is the object at the centre of `candidates[0].crop` an illegal-mining dredge or mining barge?",
+      "criteria": {"true": "A mining dredge or barge: …", "false": "Not a dredge or barge: a small boat or canoe, a log, …"}
+    }
+  }
+}
+```
+
+- Each crop is a 384 px square of the full-resolution scene centred on the detection, shifted to stay
+  inside the image, upscaled ×2 to 768 px (the API accepts 280-1568 px per side; full 2560 px scenes are
+  too large). A fresh UUID reference per crop, as the docs recommend.
+- The model is pinned to `jev-1.13.0`: the `jev-latest` alias moves, and the 0.7 threshold is tuned
+  against one version. The response's `model` field is logged with the token `usage`.
+
+**Decision.** `answers.candidate_<i>.noul` is the probability of "yes" (a Noul has no separate
+confidence). A candidate is confirmed when `noul >= JEV_MIN_NOUL` (0.7, inclusive). Rejected candidates
+are dropped from the backend payload; if all are rejected the scene is reported with the remaining
+weaker detections, or `[]`. Each task's report lists them under `jev_rejections` (object, confidence,
+noul, box, reason `below_min_noul` or `not_checked`), and the summary counts `jev_confirmed` /
+`jev_rejected`.
+
+**Errors.** Like the official SDK: 408, 429 and 5xx (`529` = overloaded) are retried up to
+`JEV_MAX_RETRIES` (3) times with exponential backoff (0.5 s doubling, max 5 s, 25% jitter), honouring
+`Retry-After` / `retry-after-ms` (capped at 60 s); connection errors and timeouts (`JEV_TIMEOUT_S`, 60 s)
+are retried too. 400, 401, 413, 415 and 422 are not retried. If Jev cannot answer, the scene is **not
+reported** (`jev_unavailable`): a strong detection is never sent unconfirmed. The key is never logged.
+
+Images are a "Dreamer-ready" (beta) feature of the TypeSafe API: the format, limits and accuracy can change
+between releases. Check a key and the request format with `scripts/check_jev.py`.
