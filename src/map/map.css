@@ -210,3 +210,14 @@
   border-color: #e3e3e8;
   font-size: 20px;
 }
+
+/* Leaflet gives popup paragraphs a 17px margin; the card sets its own rhythm. */
+.leaflet-popup-content .cp p {
+  margin: 0;
+}
+.leaflet-popup-content .cp .cp-t {
+  margin: 2px 24px 0 0;
+}
+.leaflet-popup-content .cp .cp-d {
+  margin: 2px 0 10px;
+}

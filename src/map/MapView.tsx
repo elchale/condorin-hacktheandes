@@ -134,7 +134,8 @@ export default function MapView(props: MapViewProps) {
         color: far || age === 0 ? "#fde047" : C.yellowEdge,
         weight: z < 7 ? 2.5 : far ? 1.5 : age === 0 ? 1.2 : 0.6,
         fillColor: age === 0 ? "#fde047" : C.yellow,
-        fillOpacity: age === 0 ? 0.8 : Math.max(0.4, 0.62 - age * 0.03),
+        // Close in, the imagery under the footprint matters more than the fill.
+        fillOpacity: (age === 0 ? 0.8 : Math.max(0.4, 0.62 - age * 0.03)) * (z >= 12 ? 0.45 : 1),
       });
       if (!m.hasLayer(layer)) layer.addTo(m);
     }
@@ -250,7 +251,7 @@ export default function MapView(props: MapViewProps) {
         fillColor: d.alerting ? C.red : C.amber,
         fillOpacity: 1,
       });
-      mk.bindPopup(() => popupHtml(f, latest.current, names[d.river] ?? d.river), { maxWidth: 280, minWidth: 220, autoPanPadding: L.point(16, 16) });
+      mk.bindPopup(() => popupHtml(f, latest.current, names[d.river] ?? d.river), { maxWidth: 280, minWidth: 220, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) });
       mk.on("click", () => latest.current.onSelect(d.id));
       mk.addTo(g);
       markers.current.set(d.id, mk);

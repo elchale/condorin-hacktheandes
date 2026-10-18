@@ -199,7 +199,7 @@ export function Dashboard() {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
-  const snapY = (s: 0 | 1 | 2) => (s === 2 ? 0 : s === 1 ? Math.round(sheetH * 0.42) : Math.max(0, sheetH - peek));
+  const snapY = (s: 0 | 1 | 2) => (s === 2 ? 0 : s === 1 ? Math.round(sheetH * 0.16) : Math.max(0, sheetH - peek));
   const justDragged = useRef(false);
   const drag = useRef<{ y0: number; t0: number; base: number; moved: boolean } | null>(null);
 
