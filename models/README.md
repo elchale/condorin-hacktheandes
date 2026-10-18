@@ -41,13 +41,15 @@ The card is validated by `condorin.core.model_card.ModelCard`; check it locally 
 ## Publishing a new version
 
 ```bash
-VERSION=2026-10-r1
+VERSION=v0.3
 gcloud storage cp best.pt model_card.json gs://<bucket>/models/$VERSION/
-# Then build + deploy with that version (see docs/runbook.md):
-gcloud builds submit --config deploy/cloudbuild.yaml --substitutions=_MODEL_VERSION=$VERSION,...
+gh variable set MODEL_GCS_URI --body "gs://<bucket>/models/$VERSION/"   # then push to main (or re-run CI)
 ```
 
-The image tag is `<code-version>-model<model-version>`, so every deployed revision names its exact model.
+CI copies that folder into `./model`, bakes it into the Job image and tags it
+`condorin-detector:<git sha>-model<version>`, so every Job revision names its exact model. The
+`version` field is what the backend receives as `model.version`. `github-deployer` needs
+`roles/storage.objectViewer` on `<bucket>`.
 
 ## Local development
 

@@ -19,6 +19,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Cloud Run Job `condorin-detector` (python -m condorin.job), without the model runtime.
+job = [
+    "google-cloud-storage>=2.16",
+    "google-auth>=2.29",
+    "requests>=2.31",
+]
+# Model runtime for the Job. torch comes from the PyTorch CPU wheel index in the Dockerfile.
+ml = [
+    "ultralytics>=8.2",
+    "torch",
+]
+# Cloud Run service `condorin-detector-trigger`: no torch, no ultralytics.
+trigger = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "google-cloud-storage>=2.16",
+    "google-auth>=2.29",
+    "requests>=2.31",
+]
 # Notifier service (and the HTTP/GCS parts of the detector). No torch, no ultralytics.
 notifier = [
     "fastapi>=0.110",
