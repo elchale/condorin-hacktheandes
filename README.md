@@ -40,7 +40,7 @@ later start the same Job once a day. Bucket events (Eventarc) were ruled out: th
 | `lat`/`lon` | Box centre mapped linearly inside the scene bounds: custom metadata `bounds` = `{"sw": [lat, lon], "ne": [lat, lon]}`, else `..._sw_<lat>_<lon>_ne_<lat>_<lon>...` in the name. |
 | Detections | Positive class (`mining_vessel`) with confidence ≥ `MIN_CONFIDENCE` (default: the model card's `review_low`), strongest 500. |
 | `bbox` | `[x, y, w, h]` integer pixels, top-left origin, full image. |
-| Crop | PNG of the box + 32 px (min 128 px) at `crops/<object without ext>/<generation>/<model version>/<i>.png`, created only if absent (never overwritten), sent as `gs://river-images/crops/...#<generation>`. |
+| Crop (`crop_uri`) | `CROP_MODE=scene_boxed` (default): the whole scene as a JPEG, longest side at most 1600 px (`SCENE_MAX_PX`), with a numbered red box on every reported detection (1 = first in the report), at `crops/<object without ext>/<generation>/<model version>/scene.jpg`; all detections of the scene point to it. This is what the backend's WhatsApp alert shows. `CROP_MODE=crop`: one close-up PNG per detection (box + 32 px, min 128 px) at `.../<i>.png`. Created only if absent (never overwritten), sent as `gs://river-images/crops/...#<generation>`. |
 
 Every readable image is reported, with or without detections; the backend deduplicates by
 `Idempotency-Key: <bucket>/<object>#<generation>`, so re-running a prefix is safe.
@@ -89,7 +89,7 @@ For the real model install `torch` (CPU wheel index) and `.[ml]`, and point `MOD
 
 Job (`src/condorin/job/config.py`): `PREFIX` (set per execution by the trigger), `INPUT_BUCKET`,
 `WEBHOOK_MODE` (`post` in production, `log` for dry runs), `WEBHOOK_URL`, `MIN_CONFIDENCE`,
-`DEFAULT_SATELLITE`, `CROPS_PREFIX`, `REPORTS_PREFIX`, `TASK_BUDGET_S`, `MAX_IMAGES`, `MODEL_DIR`. Auth is
+`DEFAULT_SATELLITE`, `CROPS_PREFIX`, `CROP_MODE`, `SCENE_MAX_PX`, `REPORTS_PREFIX`, `TASK_BUDGET_S`, `MAX_IMAGES`, `MODEL_DIR`. Auth is
 a Google ID token of the runtime SA with audience `WEBHOOK_URL`. `DETECTIONS_SHARED_SECRET` (from Secret
 Manager, never in the repo) is an optional fallback. Jev: `JEV_ENABLED`, `TYPESAFE_API_KEY` (Secret
 Manager `typesafe-api-key`, never in the repo), `JEV_MODEL` (pinned, `jev-1.13.0`),

@@ -121,6 +121,39 @@ def gsd_from_metadata(metadata: dict) -> float | None:
     return gsd
 
 
+BOX_COLOR = (0, 0, 255)  # BGR red
+BOX_OUTLINE = (255, 255, 255)  # thin white edge so the red box stands out on dark water
+
+
+def boxed_scene_jpeg(image_bgr: np.ndarray, boxes: list[tuple[float, ...]], max_px: int) -> bytes:
+    """The whole scene, downscaled so its longest side is at most `max_px`, with a numbered box
+    around each detection (1 = first in the report). Vessels are only 25-60 px in the full scene,
+    so boxes are padded and drawn thick enough to find at phone size."""
+    h, w = image_bgr.shape[:2]
+    scale = min(1.0, max_px / max(h, w))
+    img = (
+        cv2.resize(image_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+        if scale < 1.0
+        else image_bgr.copy()
+    )
+    thick = max(2, round(max(img.shape[:2]) / 400))
+    pad = 3 * thick
+    for i, (x1, y1, x2, y2) in enumerate(boxes, start=1):
+        p1 = (round(x1 * scale) - pad, round(y1 * scale) - pad)
+        p2 = (round(x2 * scale) + pad, round(y2 * scale) + pad)
+        cv2.rectangle(img, p1, p2, BOX_OUTLINE, thick + 2, cv2.LINE_AA)
+        cv2.rectangle(img, p1, p2, BOX_COLOR, thick, cv2.LINE_AA)
+        label_at = (p1[0], max(p1[1] - pad, 12 * thick))
+        cv2.putText(img, str(i), label_at, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * thick, BOX_OUTLINE,
+                    thick + 2, cv2.LINE_AA)  # fmt: skip
+        cv2.putText(img, str(i), label_at, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * thick, BOX_COLOR,
+                    thick, cv2.LINE_AA)  # fmt: skip
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:  # pragma: no cover
+        raise SkipImage("crop_encode_failed")
+    return buf.tobytes()
+
+
 def crop_png(image_bgr: np.ndarray, xyxy: tuple[float, ...], pad: int, min_side: int) -> bytes:
     """The box plus `pad` px on each side, at least `min_side` px wide and tall, clamped to the image."""
     h, w = image_bgr.shape[:2]
@@ -159,10 +192,33 @@ class Runner:
         s = self.settings.min_confidence
         return self.card.thresholds.review_low if s is None else s
 
-    def crop_object(self, obj: str, generation: str, i: int) -> str:
-        """`crops/<object without extension>/<generation>/<model version>/<i>.png`"""
+    def crop_object(self, obj: str, generation: str, i: int | None) -> str:
+        """`crops/<object without extension>/<generation>/<model version>/<i>.png`, or
+        `.../scene.jpg` (i=None) for the boxed scene shared by all of a scene's detections."""
         stem = PurePosixPath(obj).with_suffix("")
-        return f"{self.settings.crops_prefix.strip('/')}/{stem}/{generation}/{self.card.version}/{i:03d}.png"
+        name = "scene.jpg" if i is None else f"{i:03d}.png"
+        return f"{self.settings.crops_prefix.strip('/')}/{stem}/{generation}/{self.card.version}/{name}"
+
+    def crop_uris(self, obj: str, generation: str, image_bgr: np.ndarray, found: list) -> list[str]:
+        """One `gs://bucket/object#generation` per detection. Objects are created once and never
+        overwritten (the backend pins them as evidence), so a re-run reuses the first version."""
+        if not found:
+            return []
+        root = bucket_root(self.settings)
+        bucket = storage.parse_uri(storage.join(root, obj)).bucket
+        s = self.settings
+        if s.crop_mode == "scene_boxed":
+            data = boxed_scene_jpeg(image_bgr, [d.box for d in found], s.scene_max_px)
+            name = self.crop_object(obj, generation, None)
+            gen = storage.write_once(storage.join(root, name), data, "image/jpeg")
+            return [f"gs://{bucket}/{name}#{gen}"] * len(found)
+        uris = []
+        for i, d in enumerate(found):
+            png = crop_png(image_bgr, d.box, s.crop_padding_px, s.crop_min_side_px)
+            name = self.crop_object(obj, generation, i)
+            gen = storage.write_once(storage.join(root, name), png, "image/png")
+            uris.append(f"gs://{bucket}/{name}#{gen}")
+        return uris
 
     def run(self, objects: list[str], deadline: float | None = None) -> Summary:
         """Process `objects` in order. With `deadline` (a time.monotonic() value), stop before an
@@ -284,16 +340,12 @@ class Runner:
         found = self.confirm(obj, qc.image_bgr, found)
 
         detections = []
-        for i, d in enumerate(found):
+        crop_uris = self.crop_uris(obj, generation, qc.image_bgr, found)
+        for d, crop_uri in zip(found, crop_uris, strict=True):
             bbox, lat, lon = box_to_webhook(d.box, qc.width, qc.height, meta["bounds"])
-            png = crop_png(qc.image_bgr, d.box, self.settings.crop_padding_px,
-                           self.settings.crop_min_side_px)  # fmt: skip
-            crop_obj = self.crop_object(obj, generation, i)
-            crop_gen = storage.write_once(storage.join(root, crop_obj), png, "image/png")
             detections.append({
                 "lat": lat, "lon": lon, "confidence": round(float(d.conf), 4),
-                "bbox": [max(v, 0) for v in bbox],
-                "crop_uri": f"gs://{bucket}/{crop_obj}#{crop_gen}",
+                "bbox": [max(v, 0) for v in bbox], "crop_uri": crop_uri,
             })  # fmt: skip
 
         payload = {
