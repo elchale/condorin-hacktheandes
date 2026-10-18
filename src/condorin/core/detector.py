@@ -167,7 +167,9 @@ class FakeDetector:
         return out
 
 
-def build_detector(settings, card: ModelCard) -> Detector:  # settings: condorin.config.Settings
+def build_detector(
+    settings, card: ModelCard
+) -> Detector:  # settings: condorin.job.config.JobSettings
     if settings.fake_model:
         return FakeDetector(card)
     tile_filter = None

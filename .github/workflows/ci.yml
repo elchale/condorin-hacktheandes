@@ -38,7 +38,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       # No torch needed: tests use the fake and stub detectors.
-      - run: pip install -e ".[job,trigger,notifier,dev]" google-cloud-tasks
+      - run: pip install -e ".[job,trigger,dev]"
       - run: pytest --tb=short -q
       - run: bash -n deploy/gcp-setup.sh && deploy/gcp-setup.sh --dry-run >/dev/null
 
