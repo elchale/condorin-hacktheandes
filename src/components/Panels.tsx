@@ -82,6 +82,7 @@ export function DetectionList(props: {
                 <button
                   type="button"
                   onClick={() => onPick(d.id)}
+                  aria-current={sel ? "true" : undefined}
                   className={`flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left sm:px-4 ${sel ? "bg-cian/10" : "hover:bg-panel-2"}`}
                 >
                   <span className={`size-2.5 shrink-0 rounded-full ${d.alerting ? "bg-rojo" : "bg-ambar"}`} aria-hidden />

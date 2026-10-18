@@ -186,7 +186,6 @@ export function Dashboard() {
     ...(metas.length || extras.length ? [{ id: "capas" as Tab, label: "Capas" }] : []),
   ];
   const currentTab = tab === "capas" && !metas.length && !extras.length ? "detecciones" : tab;
-  const expanded = !desktop && snap > 0;
   const legend = (
     <Legend
       footprint={activeIds.has(FOOTPRINT_ID)}
@@ -277,8 +276,6 @@ export function Dashboard() {
         <aside
           ref={sheet}
           aria-label="Datos del mapa"
-          role={expanded ? "dialog" : undefined}
-          aria-modal={expanded ? false : undefined}
           className="sheet fixed inset-x-0 bottom-0 z-[1000] flex h-[calc(100dvh-96px)] flex-col rounded-t-3xl bg-white shadow-[0_-10px_30px_rgba(24,24,27,.18)] lg:static lg:order-1 lg:h-full lg:w-[380px] lg:shrink-0 lg:rounded-none lg:border-r lg:border-line lg:shadow-none"
           style={desktop ? undefined : ({ "--sheet-y": `${snapY(snap)}px` } as React.CSSProperties)}
         >
