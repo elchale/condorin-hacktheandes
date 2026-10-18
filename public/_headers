@@ -1,0 +1,16 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/data/*
+  Cache-Control: public, max-age=31536000, immutable
+/data/layers.json
+  ! Cache-Control
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+/img/*
+  Cache-Control: public, max-age=2592000
+/brand/*
+  Cache-Control: public, max-age=604800

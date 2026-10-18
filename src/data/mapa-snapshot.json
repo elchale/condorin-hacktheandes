@@ -1,0 +1,297 @@
+{
+  "generated_at": "2026-10-18T04:03:29Z",
+  "brand": "Ojo de Cóndor",
+  "bbox": [
+    -71.6,
+    -13.2907,
+    -69.6391,
+    -2.4
+  ],
+  "totals": {
+    "images": 2,
+    "detections": 8,
+    "alerting_detections": 7,
+    "alerts_sent": 14,
+    "alerts_opened": 3,
+    "expedientes": 1,
+    "expedientes_filed": 0,
+    "ongs": 9,
+    "members": 16,
+    "users": 5,
+    "rivers": 2
+  },
+  "rivers": [
+    {
+      "slug": "malinowski",
+      "name": "Malinowski",
+      "basin": "Tambopata",
+      "region": "Madre de Dios",
+      "province": "Tambopata",
+      "district": "Inambari",
+      "protected_area": "",
+      "lat": -13.02045,
+      "lon": -69.9453,
+      "ongs": 9,
+      "images": 2,
+      "detections": 8,
+      "last_captured_at": "2026-10-17T15:30:00Z"
+    },
+    {
+      "slug": "yaguas",
+      "name": "Yaguas",
+      "basin": "Putumayo",
+      "region": "Loreto",
+      "province": "Putumayo",
+      "district": "Yaguas",
+      "protected_area": "Parque Nacional Yaguas",
+      "lat": -2.65,
+      "lon": -71.35,
+      "ongs": 1,
+      "images": 0,
+      "detections": 0,
+      "last_captured_at": null
+    }
+  ],
+  "images": [
+    {
+      "id": 1,
+      "river": "malinowski",
+      "satellite": "PlanetScope",
+      "captured_at": "2026-10-17T15:30:00Z",
+      "model": "mining-detector v0.3",
+      "detections": 6,
+      "alerting": 5,
+      "top_confidence": 0.91,
+      "lat": -13.03148,
+      "lon": -69.95716,
+      "alerts_sent": 14,
+      "expedientes": {
+        "draft": 1,
+        "ready": 0,
+        "filed": 0
+      }
+    },
+    {
+      "id": 2,
+      "river": "malinowski",
+      "satellite": "PlanetScope",
+      "captured_at": "2026-09-02T15:20:00Z",
+      "model": "mining-detector v0.3",
+      "detections": 2,
+      "alerting": 2,
+      "top_confidence": 0.83,
+      "lat": -13.02771,
+      "lon": -69.95393,
+      "alerts_sent": 0,
+      "expedientes": {
+        "draft": 0,
+        "ready": 0,
+        "filed": 0
+      }
+    }
+  ],
+  "detections": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.95716,
+            -13.03148
+          ]
+        },
+        "properties": {
+          "id": 1,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.91,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -70.03613,
+            -12.98549
+          ]
+        },
+        "properties": {
+          "id": 4,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.86,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.95393,
+            -13.02771
+          ]
+        },
+        "properties": {
+          "id": 2,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.78,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.93313,
+            -13.04068
+          ]
+        },
+        "properties": {
+          "id": 5,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.74,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.89407,
+            -12.99616
+          ]
+        },
+        "properties": {
+          "id": 6,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.67,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.88906,
+            -13.02885
+          ]
+        },
+        "properties": {
+          "id": 3,
+          "image": 1,
+          "river": "malinowski",
+          "confidence": 0.38,
+          "captured_at": "2026-10-17T15:30:00Z",
+          "alerting": false,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.95393,
+            -13.02771
+          ]
+        },
+        "properties": {
+          "id": 7,
+          "image": 2,
+          "river": "malinowski",
+          "confidence": 0.83,
+          "captured_at": "2026-09-02T15:20:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            -69.945,
+            -13.0255
+          ]
+        },
+        "properties": {
+          "id": 8,
+          "image": 2,
+          "river": "malinowski",
+          "confidence": 0.71,
+          "captured_at": "2026-09-02T15:20:00Z",
+          "alerting": true,
+          "satellite": "PlanetScope",
+          "kind": "draga"
+        }
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "month": "2026-09",
+      "images": 1,
+      "detections": 2
+    },
+    {
+      "month": "2026-10",
+      "images": 1,
+      "detections": 6
+    }
+  ],
+  "activity": [
+    {
+      "at": "2026-10-18T03:29:21Z",
+      "kind": "alert",
+      "river": "malinowski",
+      "label": "Alerta enviada a 9 ONGs del río Malinowski"
+    },
+    {
+      "at": "2026-10-18T02:11:48Z",
+      "kind": "expediente_opened",
+      "river": "malinowski",
+      "label": "Una ONG abrió un expediente por el río Malinowski"
+    },
+    {
+      "at": "2026-10-17T15:30:00Z",
+      "kind": "image",
+      "river": "malinowski",
+      "label": "Nueva escena en el río Malinowski con 6 detecciones"
+    },
+    {
+      "at": "2026-09-02T15:20:00Z",
+      "kind": "image",
+      "river": "malinowski",
+      "label": "Nueva escena en el río Malinowski con 2 detecciones"
+    }
+  ],
+  "mine": null
+}
