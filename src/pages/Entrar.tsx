@@ -32,6 +32,8 @@ export default function Entrar() {
   // Only on sign in state changes; the query string is read as it is then.
   useEffect(() => {
     if (signedIn) navigate(safeNext(search.get("next")) ?? "/panel", { replace: true });
+    // Sign in changes only; a query string change alone must not navigate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn]);
 
   useEffect(() => {

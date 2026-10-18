@@ -105,6 +105,7 @@ export function useFuentes(ready: boolean): Fuentes | null {
       window.clearTimeout(timer);
       ctrl.abort();
     };
+    // Fetched once: `data` is only the "already have it" guard, its change must not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
   return data;

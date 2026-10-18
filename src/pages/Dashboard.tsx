@@ -112,6 +112,7 @@ export function Dashboard() {
       return;
     }
     return whenIdle(() => setMapWanted(true), 2500);
+    // Mount only: turning save data on later must not unload the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const wantMap = useCallback(() => {

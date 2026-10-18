@@ -339,16 +339,22 @@ export default function MapView(props: MapViewProps) {
     };
     const root = el.current;
     root.addEventListener("click", onClick);
+    // These maps are created once with the component and never replaced.
+    const ownMarkers = markers.current;
+    const ownStatic = staticLayers.current;
+    const ownYears = yearLayers.current;
+    const ownTiles = tileOverlays.current;
     return () => {
       root.removeEventListener("click", onClick);
       m.remove();
       map.current = null;
-      markers.current.clear();
-      staticLayers.current.clear();
-      yearLayers.current.clear();
-      tileOverlays.current.clear();
+      ownMarkers.clear();
+      ownStatic.clear();
+      ownYears.clear();
+      ownTiles.clear();
       fireLayer.current = null;
     };
+    // Create the Leaflet map once; every helper it calls reads the latest props through `latest`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -463,9 +469,13 @@ export default function MapView(props: MapViewProps) {
     }
   }, [props.tiles]);
 
+  // The draw helpers are plain functions that read props through `latest`; these lists say when to redraw.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(drawDetections, [props.detections, props.rivers, props.mineRivers, props.saveData, props.pulseDay]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(syncStatic, [props.layers]);
-  useEffect(styleYears, [props.years[0], props.years[1]]);
+  const [yearFrom, yearTo] = props.years;
+  useEffect(styleYears, [yearFrom, yearTo]);
 
   // One shot commands from the list.
   useEffect(() => {
@@ -496,6 +506,7 @@ export default function MapView(props: MapViewProps) {
       m.setView(ll, z);
       open();
     }
+    // One shot: runs only for a new command (each has a fresh `n`), never when the detections change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.command]);
 
