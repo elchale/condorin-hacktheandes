@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { syncClock, useNow, type Clock } from "../../lib/clock";
+import { WINDOW_DAYS } from "../../lib/days";
 
 const TZ = "America/Lima";
 const dateFmt = new Intl.DateTimeFormat("es-PE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: TZ });
@@ -24,7 +25,12 @@ export function TodayClock({ clock }: { clock: Clock | null | undefined }) {
     >
       <div className="min-w-0">
         <p className="text-sm font-semibold text-muted">Hoy</p>
-        <p className="mt-0.5 text-lg font-black leading-tight tracking-tight sm:text-xl">{date}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-lg font-black leading-tight tracking-tight sm:text-xl">{date}</span>
+          <span className="rounded-full border-2 border-amber-400 bg-amber-50 px-3 py-1 text-sm font-extrabold text-ink">
+            Mostrando últimos {WINDOW_DAYS} días
+          </span>
+        </p>
       </div>
       <div className="flex items-center gap-3">
         {simulated && (
