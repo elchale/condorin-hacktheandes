@@ -165,7 +165,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
             />
           </>
         ) : (
-          <FilingSection token={token} expediente={e} authorities={authorities} emailedTo={emailedTo} save={save} />
+          <FilingSection token={token} expediente={e} authorities={authorities} emailedTo={emailedTo} errors={errors} save={save} />
         )}
       </div>
     </Frame>

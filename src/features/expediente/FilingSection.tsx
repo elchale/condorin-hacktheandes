@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from "react";
+import { nowMs } from "../../lib/clock";
+import { limaDay } from "../../lib/format";
 import { pdfUrl } from "../shared/api";
 import type { Authority, Patch, Payload } from "../../types";
-import { card, field, hint, label, outlineButton, primaryButton, sectionTitle, textLink } from "../shared/ui";
+import { card, field, fieldError, hint, label, outlineButton, primaryButton, sectionTitle, textLink } from "../shared/ui";
 
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+/** Lima day on the API clock (the demo day too), so a filing date is never "tomorrow" for the server. */
+const today = () => limaDay(nowMs());
 
 const DATE = new Intl.DateTimeFormat("es-PE", { dateStyle: "long", timeZone: "UTC" });
 const formatDate = (iso: string) => DATE.format(new Date(`${iso}T00:00:00Z`));
@@ -13,11 +16,13 @@ type Props = {
   expediente: Payload["expediente"];
   authorities: Authority[];
   emailedTo?: string[];
+  /** Field errors from the last save (a 400 on a filing lands here). */
+  errors: Record<string, string>;
   save: (patch: Patch) => Promise<boolean>;
 };
 
 /** Screens 6 and 7: download the final PDF, file it with each authority, record the receipt. */
-export function FilingSection({ token, expediente: e, authorities, emailedTo, save }: Props) {
+export function FilingSection({ token, expediente: e, authorities, emailedTo, errors, save }: Props) {
   const chosen = authorities.filter((a) => a.selected);
   const filed = e.status === "filed";
 
@@ -47,7 +52,7 @@ export function FilingSection({ token, expediente: e, authorities, emailedTo, sa
                 {a.filing.filed_by ? `, registrado por ${a.filing.filed_by}` : ""}.
               </p>
             ) : (
-              <AuthoritySteps authority={a} save={save} />
+              <AuthoritySteps authority={a} errors={errors} save={save} />
             )}
           </li>
         ))}
@@ -65,15 +70,20 @@ export function FilingSection({ token, expediente: e, authorities, emailedTo, sa
   );
 }
 
-function AuthoritySteps({ authority: a, save }: { authority: Authority; save: Props["save"] }) {
+function AuthoritySteps({ authority: a, errors, save }: { authority: Authority; errors: Props["errors"]; save: Props["save"] }) {
   const [receipt, setReceipt] = useState("");
   const [date, setDate] = useState(today);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const errorId = `recibo-error-${a.code}`;
+  const message = failed ? errors.filings || errors.receipt_number || errors.filed_at || "No pudimos guardar el número. Inténtalo otra vez." : "";
 
   async function submit(ev: FormEvent) {
     ev.preventDefault();
     setBusy(true);
-    await save({ filings: [{ authority: a.code, receipt_number: receipt.trim(), filed_at: date }] });
+    setFailed(false);
+    const ok = await save({ filings: [{ authority: a.code, receipt_number: receipt.trim(), filed_at: date }] });
+    setFailed(!ok);
     setBusy(false);
   }
 
@@ -102,6 +112,8 @@ function AuthoritySteps({ authority: a, save }: { authority: Authority; save: Pr
             className={`${field} mt-2`}
             value={receipt}
             onChange={(ev) => setReceipt(ev.target.value)}
+            aria-invalid={message ? true : undefined}
+            aria-describedby={message ? errorId : undefined}
             required
             maxLength={120}
           />
@@ -120,6 +132,11 @@ function AuthoritySteps({ authority: a, save }: { authority: Authority; save: Pr
             required
           />
         </div>
+        {message && (
+          <p id={errorId} role="alert" className={`${fieldError} sm:col-span-2`}>
+            {message}
+          </p>
+        )}
         <button className={`${primaryButton} sm:col-span-2`} disabled={busy || !receipt.trim()}>
           {busy ? "Guardando…" : "Guardar número de registro"}
         </button>
