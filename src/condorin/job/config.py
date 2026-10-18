@@ -19,6 +19,13 @@ class JobSettings(BaseSettings):
     input_bucket: str = "river-images"
     image_suffixes: tuple[str, ...] = (".jpg", ".jpeg", ".png")
     max_images: int | None = Field(None, ge=1)
+    # Stop starting new images this long into the task, so the summary and the report are written
+    # before Cloud Run kills the task at its --task-timeout (3600 s in deploy/gcp-setup.sh).
+    # Images not started count as failed (`not_started`); re-running the prefix picks them up.
+    task_budget_s: float = Field(3300, gt=0)
+    # One JSON per task listing every image that was not reported, and why:
+    # <bucket>/<reports_prefix>/<execution>/task-NNN.json. Empty string: no report.
+    reports_prefix: str = "reports"
 
     # --- model / inference (field names are what build_detector reads) ---
     model_dir: str = "/models/current"

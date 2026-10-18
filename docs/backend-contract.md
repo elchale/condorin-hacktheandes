@@ -60,6 +60,12 @@ JPG/PNG scenes carry no geo metadata. Bounds come from custom metadata `bounds`
 in the object name. Extents are under 1 km, so the linear mapping is accurate enough; image `y` grows
 southwards. For a truncated image the full decoded height is used.
 
+### Ground resolution (GSD)
+
+The model is sensitive to ground resolution. When the object has custom metadata `gsd_m` (metres per
+pixel) and the model card sets `qc.expected_gsd_m`, QC rejects scenes more than `gsd_tolerance` (25%) away.
+Without `gsd_m` the check is skipped and the task's summary counts the scene in `gsd_unchecked`.
+
 ## When a scene is **not** reported
 
 Posting would be wrong in these cases, so the image is skipped and counted as failed (the execution exits
@@ -69,10 +75,15 @@ non-zero). Reason codes appear in the logs and in `failures_by_reason`:
 |---|---|
 | `no_river` | the object is not under `<river>/` |
 | `no_captured_at` | no metadata and no timestamp in the name |
-| `rejected_qc` | unreadable, unsupported format, too small, too much nodata, or truncated beyond 20% |
+| `rejected_qc` | unreadable, unsupported format, too small, too much nodata, truncated beyond 20%, or GSD mismatch (the detail names it) |
+| `bad_gsd_m` | custom metadata `gsd_m` is not a positive number |
 | `no_bounds` | it has findings but nowhere to place them; an empty report would hide them |
 | `storage` | GCS read or crop write failed |
 | `backend_<status>` / `backend_unreachable` | the backend refused the report or could not be reached |
+| `not_started` | the task reached its time budget (5 min before its timeout) first; a re-run picks it up |
+
+Each task writes every one of these to `gs://<bucket>/reports/<execution>/task-NNN.json`
+(`not_reported`: object, reason, detail), next to its summary.
 
 ## Delivery semantics
 
@@ -87,5 +98,5 @@ The backend deduplicates by `Idempotency-Key`, so re-running a prefix never crea
 alerts. Because the key has no model version, a newer model re-processing the same image generation is
 seen as a duplicate.
 
-The backend alerts only for `confidence >= 0.5` on scenes captured within the last 7 days; older or weaker
-detections are stored and mapped without alerting.
+The backend alerts only for `confidence >= 0.7` (`ALERT_MIN_CONFIDENCE`) on scenes captured within the last
+7 days; older or weaker detections are stored and mapped without alerting.
