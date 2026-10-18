@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { EditableFields } from "../shared/types";
+import type { EditableFields } from "../../types";
 import { field, fieldError, fieldId, hint as hintClass, label as labelClass } from "../shared/ui";
 
 type TextName = { [K in keyof EditableFields]: EditableFields[K] extends string ? K : never }[keyof EditableFields];

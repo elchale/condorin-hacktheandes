@@ -16,8 +16,8 @@ Evento and expediente also call `POST /api/v1/auth/enlace {token}` once when the
 (`shared/useLinkSignIn.tsx`): the answer `{token, member, ong}` is stored with `saveSession` from
 `src/lib/storage.ts` only if no session exists, and the "Entraste como" overlay is shown.
 
-`shared/` holds the ported helpers: `api.ts` (fetch wrapper and every call above), `types.ts` (expediente,
-evento and panel payloads), `ui.ts` (class strings in the console palette), `format.ts`, `Icon.tsx`,
+`shared/` holds the ported helpers: `api.ts` (every call above, on the one client in `src/lib/api.ts`; the
+payload types live in `src/types.ts`), `ui.ts` (class strings in the console palette), `format.ts`, `Icon.tsx`,
 `AlertSection.tsx`, `ScenePreview.tsx` and `OpenInBrowser.tsx` (shared by evento and expediente).
 
 Colors: the Next pages used the light landing tokens (`marca`, `tinta`, `gris`...). They were mapped to the

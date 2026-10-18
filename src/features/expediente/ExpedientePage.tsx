@@ -1,12 +1,13 @@
 import { Skeleton } from "../shared/Skeleton";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ApiError } from "../../lib/api";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
-import { ExpedienteError, loadExpediente, saveExpediente } from "../shared/api";
+import { loadExpediente, saveExpediente } from "../shared/api";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
 import { PageFrame } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
-import type { ApiError, Patch, Payload } from "../shared/types";
+import type { Patch, Payload } from "../../types";
 import { card, fieldId, primaryButton } from "../shared/ui";
 import { useLinkSignIn } from "../shared/useLinkSignIn";
 import { AuthoritiesSection } from "./AuthoritiesSection";
@@ -38,7 +39,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
     setLoadError(null);
     loadExpediente(token)
       .then(setData)
-      .catch((err) => setLoadError(err instanceof ExpedienteError ? err.body : { message: String(err), type: "unknown", field_errors: {} }));
+      .catch((err) => setLoadError(err instanceof ApiError ? err : new ApiError(String(err), "unknown", 0)));
   }, [token]);
 
   useEffect(load, [load]);
@@ -63,10 +64,10 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
         return true;
       } catch (err) {
         setSaveState("error");
-        if (err instanceof ExpedienteError) {
-          if (Object.keys(err.body.field_errors).length) setErrors((prev) => ({ ...prev, ...flatten(err.body.field_errors) }));
-          else setNotice(err.body.message);
-          if (err.body.type === "expediente_locked") load();
+        if (err instanceof ApiError) {
+          if (Object.keys(err.fieldErrors).length) setErrors((prev) => ({ ...prev, ...flatten(err.fieldErrors) }));
+          else setNotice(err.message);
+          if (err.type === "expediente_locked") load();
         } else {
           setNotice((err as Error).message);
         }

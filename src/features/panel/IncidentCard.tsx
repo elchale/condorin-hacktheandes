@@ -1,6 +1,6 @@
 import { dragas } from "../shared/format";
 import { Icon } from "../shared/Icon";
-import type { Incident } from "../shared/types";
+import type { Incident } from "../../types";
 
 const STATUS_STYLE = {
   none: "bg-rojo/10 text-rojo-3",

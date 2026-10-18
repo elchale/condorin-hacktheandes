@@ -5,13 +5,10 @@ import { friendlyError, requestCode, signIn } from "../lib/api";
 import { saveSession } from "../lib/session";
 import { useSession } from "../lib/hooks";
 import { formatPhone, normalizePhone } from "../lib/brand";
+import { entrar } from "../features/shared/ui";
 import { Link, navigate, useLocation } from "../router";
 
-const field =
-  "min-h-12 w-full rounded-lg border border-line bg-night px-3 text-base text-ink placeholder:text-muted/60 focus:border-cian focus:outline-none";
-const primary =
-  "min-h-12 w-full rounded-lg bg-rojo px-4 font-bold text-white hover:bg-rojo-2 disabled:cursor-not-allowed disabled:bg-line disabled:text-muted";
-const textLink = "font-medium text-rojo-2 underline underline-offset-4 hover:text-rojo-3";
+const { field, primary, textLink } = entrar;
 
 /** Only same site paths ("/panel", "/expediente/abc"), never "//host" or absolute URLs. */
 function safeNext(next: string | null): string | null {

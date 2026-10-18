@@ -1,4 +1,4 @@
-import type { Panel } from "../shared/types";
+import type { Panel } from "../../types";
 
 export function PanelTotals({ totals }: { totals: Panel["totals"] }) {
   const cards = [

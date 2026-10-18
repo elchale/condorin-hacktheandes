@@ -1,4 +1,4 @@
-import type { Authority, Patch, Payload } from "../shared/types";
+import type { Authority, Patch, Payload } from "../../types";
 import { card, fieldError, fieldId, hint, sectionTitle } from "../shared/ui";
 
 type Props = {

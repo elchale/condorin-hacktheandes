@@ -1,13 +1,13 @@
+import { ApiError } from "../../lib/api";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
-import { ExpedienteError, loadEvento, type Evento } from "../shared/api";
+import { loadEvento, type Evento } from "../shared/api";
 import { Icon } from "../shared/Icon";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
 import { Skeleton } from "../shared/Skeleton";
 import { PageFrame } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
-import type { ApiError } from "../shared/types";
 import { card, outlineButton, primaryButton } from "../shared/ui";
 import { useLinkSignIn } from "../shared/useLinkSignIn";
 
@@ -38,7 +38,7 @@ export default function EventoPage({ token: tokenProp }: { token?: string }) {
     loadEvento(token)
       .then(setData)
       .catch((err) =>
-        setError(err instanceof ExpedienteError ? err.body : { message: "No pudimos abrir el evento.", type: "unknown", field_errors: {} }),
+        setError(err instanceof ApiError ? err : new ApiError("No pudimos abrir el evento.", "unknown", 0)),
       );
   }, [token]);
 

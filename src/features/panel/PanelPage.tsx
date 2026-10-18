@@ -1,18 +1,19 @@
+import { ApiError } from "../../lib/api";
 import { useCallback, useEffect, useState } from "react";
 import { WelcomeOverlay } from "../../components/WelcomeOverlay";
 import { useSession } from "../../lib/hooks";
-import { clearSession } from "../../lib/storage";
+import { clearToken } from "../../lib/session";
 import { navigate, useLocation } from "../../router";
-import { ExpedienteError, expedienteToken, loadIncidents, loadMe, pageOf } from "../shared/api";
+import { expedienteToken, loadIncidents, loadMe, pageOf } from "../shared/api";
 import { PageFrame } from "../shared/PageFrame";
-import type { ApiError, Incident, Panel } from "../shared/types";
+import type { Incident, Panel } from "../../types";
 import { Skeleton } from "../shared/Skeleton";
 import { card, outlineButton, primaryButton } from "../shared/ui";
 import { IncidentCard } from "./IncidentCard";
 import { PanelTotals } from "./PanelTotals";
 import { TodayClock } from "./TodayClock";
 
-const UNKNOWN: ApiError = { message: "No pudimos conectarnos con Ojo de Cóndor. Inténtalo otra vez en un momento.", type: "unknown", field_errors: {} };
+const UNKNOWN = new ApiError("No pudimos conectarnos con Ojo de Cóndor. Inténtalo otra vez en un momento.", "unknown", 0);
 
 /** /panel: the member's ONG, its detections and the next action for each. Needs the bearer session. */
 export default function PanelPage(_props: { token?: string }) {
@@ -50,11 +51,11 @@ export default function PanelPage(_props: { token?: string }) {
       })
       .catch((err) => {
         if (!alive) return;
-        if (err instanceof ExpedienteError && err.status === 401) {
-          clearSession(); // the effect runs again without a session and sends the member to /entrar
+        if (err instanceof ApiError && err.status === 401) {
+          clearToken(); // the effect runs again without a session and sends the member to /entrar
           return;
         }
-        setError(err instanceof ExpedienteError ? err.body : UNKNOWN);
+        setError(err instanceof ApiError ? err : UNKNOWN);
       });
     return () => {
       alive = false;

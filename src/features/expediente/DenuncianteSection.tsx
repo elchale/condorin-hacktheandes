@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AutoField } from "./AutoField";
-import type { Payload } from "../shared/types";
+import type { Payload } from "../../types";
 import { card, hint, sectionTitle, textLink } from "../shared/ui";
 
 type Props = {

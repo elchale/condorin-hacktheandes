@@ -1,6 +1,7 @@
+import { ApiError } from "../../lib/api";
 import { useEffect, useState } from "react";
-import { ExpedienteError, pdfUrl, sendExpediente } from "../shared/api";
-import type { Patch, Payload } from "../shared/types";
+import { pdfUrl, sendExpediente } from "../shared/api";
+import type { Patch, Payload } from "../../types";
 import { card, field, fieldError, fieldId, hint, outlineButton, primaryButton, sectionTitle, textLink } from "../shared/ui";
 
 const RESEND_SECONDS = 45;
@@ -41,7 +42,7 @@ export function ConfirmSection({ token, expediente: e, errors, save, onMissing, 
         setWait(RESEND_SECONDS);
       }
     } catch (err) {
-      if (err instanceof ExpedienteError && err.status === 400) onMissing(err.body.field_errors);
+      if (err instanceof ApiError && err.status === 400) onMissing(err.fieldErrors);
       else setError((err as Error).message);
     } finally {
       setBusy(false);
@@ -56,7 +57,7 @@ export function ConfirmSection({ token, expediente: e, errors, save, onMissing, 
       if (res.status === 200) onConfirmed(res.data);
     } catch (err) {
       setError((err as Error).message);
-      if (err instanceof ExpedienteError && err.body.type === "code_expired") setPhoneHint(null);
+      if (err instanceof ApiError && err.type === "code_expired") setPhoneHint(null);
       setCode("");
     } finally {
       setBusy(false);

@@ -27,5 +27,3 @@ export function getJSON<T>(key: string, fallback: T): T {
   }
 }
 
-// Compatibility names: session helpers now live in ./session (getSession, saveSession, setToken, clearToken, authHeaders).
-export { getSession as readSession, saveSession, clearToken as clearSession, subscribeSession } from "./session";

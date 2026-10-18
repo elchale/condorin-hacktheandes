@@ -1,5 +1,5 @@
 import { AutoField } from "./AutoField";
-import type { Payload } from "../shared/types";
+import type { Payload } from "../../types";
 import { card, sectionTitle } from "../shared/ui";
 
 type Props = {

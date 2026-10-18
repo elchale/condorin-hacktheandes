@@ -1,7 +1,7 @@
 import { Icon } from "./Icon";
 import { dragas } from "./format";
 import { ScenePreview } from "./ScenePreview";
-import type { Payload } from "./types";
+import type { Payload } from "../../types";
 import { card, textLink } from "./ui";
 
 

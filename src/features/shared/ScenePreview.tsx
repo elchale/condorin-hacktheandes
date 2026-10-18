@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Payload } from "./types";
+import type { Payload } from "../../types";
 
 type Scene = Payload["incident"]["scene"];
 

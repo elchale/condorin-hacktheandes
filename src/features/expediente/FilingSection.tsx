@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { pdfUrl } from "../shared/api";
-import type { Authority, Patch, Payload } from "../shared/types";
+import type { Authority, Patch, Payload } from "../../types";
 import { card, field, hint, label, outlineButton, primaryButton, sectionTitle, textLink } from "../shared/ui";
 
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });

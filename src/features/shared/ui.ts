@@ -18,3 +18,12 @@ export const outlineButton =
 
 /** The id each field's wrapper gets, so a 400 from /enviar can scroll to it. */
 export const fieldId = (name: string) => `campo-${name}`;
+
+/** The /entrar card: a denser form on a white card (its own sizes, kept apart from the member pages). */
+export const entrar = {
+  field:
+    "min-h-12 w-full rounded-lg border border-line bg-night px-3 text-base text-ink placeholder:text-muted/60 focus:border-cian focus:outline-none",
+  primary:
+    "min-h-12 w-full rounded-lg bg-rojo px-4 font-bold text-white hover:bg-rojo-2 disabled:cursor-not-allowed disabled:bg-line disabled:text-muted",
+  textLink: "font-medium text-rojo-2 underline underline-offset-4 hover:text-rojo-3",
+};
