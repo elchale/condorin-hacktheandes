@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Typecheck and build before every push, so Vercel never gets a broken main. Enable once per clone with
+#   git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+npm run --silent check >/dev/null || { echo "pre-push: npm run check failed; nothing was pushed." >&2; exit 1; }
