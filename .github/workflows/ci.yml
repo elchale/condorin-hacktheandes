@@ -104,8 +104,9 @@ jobs:
         if: env.MODEL_GCS_URI == ''
         run: echo "::warning::MODEL_GCS_URI is not set; the Job image was not deployed."
 
+      # Only once an image was pushed, so a sign-in failure does not hide behind a second error.
       - name: Why the trigger revision failed
-        if: failure()
+        if: failure() && env.TRIGGER_IMAGE != ''
         run: |
-          gcloud run services describe condorin-detector-trigger --region "$REGION" \
+          gcloud run services describe condorin-detector-trigger --region "$REGION" --project wisecai-consultor-prod \
             --format='yaml(status.conditions,status.latestCreatedRevisionName,status.latestReadyRevisionName)'

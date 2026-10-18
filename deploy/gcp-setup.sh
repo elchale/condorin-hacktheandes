@@ -85,7 +85,8 @@ else
     --image "$PLACEHOLDER_SERVICE_IMAGE" --service-account "$SA" --set-env-vars "$TRIGGER_ENV" \
     --no-allow-unauthenticated --cpu 1 --memory 512Mi --max-instances 2 --concurrency 10
 fi
-IFS=',' read -ra members <<< "$INVOKERS"
+# github-deployer is the identity of the "Procesar imágenes" workflow (.github/workflows/procesar.yml)
+IFS=',' read -ra members <<< "serviceAccount:${DEPLOYER_SA},${INVOKERS}"
 for m in "${members[@]}"; do
   [[ -z "$m" ]] && continue
   run gcloud run services add-iam-policy-binding "$SERVICE" --project "$PROJECT" --region "$REGION" \
