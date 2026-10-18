@@ -1,0 +1,14 @@
+{
+  "name": "Ojo de Cóndor · Alertas de minería ilegal",
+  "short_name": "Ojo de Cóndor",
+  "description": "Mapa y alertas de dragas y minería ilegal de tajo abierto en la Amazonía peruana.",
+  "lang": "es-PE",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e11d2e",
+  "icons": [
+    { "src": "/brand/favicon-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/brand/favicon-512x512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
