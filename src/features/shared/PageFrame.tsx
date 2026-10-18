@@ -20,7 +20,7 @@ export function PageFrame({ status, back, width = "narrow", children }: Props) {
       <div className="border-b border-line bg-white">
         <div className={`mx-auto flex ${max} items-center justify-between gap-3 px-4`}>
           <div className="flex min-w-0 items-center gap-4 text-sm">
-            <Link href="/" className="flex min-h-11 items-center font-semibold text-cian underline underline-offset-2">
+            <Link href="/" className="flex min-h-11 items-center font-semibold text-rojo-2 underline underline-offset-2 hover:text-rojo-3">
               Volver al mapa
             </Link>
             {back && (

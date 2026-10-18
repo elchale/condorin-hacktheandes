@@ -271,7 +271,7 @@ export default function MapView(props: MapViewProps) {
   // Create the map once.
   useEffect(() => {
     if (!el.current) return;
-    const m = L.map(el.current, { preferCanvas: true, zoomControl: false, attributionControl: true, minZoom: 4, zoomSnap: 0.5 });
+    const m = L.map(el.current, { preferCanvas: true, zoomControl: false, attributionControl: true, minZoom: 4 });
     m.attributionControl.setPrefix(false);
     L.control.zoom({ position: "topright", zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(m);
     // Labels sit above the base tiles and the footprint, and never catch taps.

@@ -9,8 +9,8 @@ import { Link, navigate, useLocation } from "../router";
 const field =
   "min-h-12 w-full rounded-lg border border-line bg-night px-3 text-base text-ink placeholder:text-muted/60 focus:border-cian focus:outline-none";
 const primary =
-  "min-h-12 w-full rounded-lg bg-rojo px-4 font-bold text-white hover:bg-rojo-2 disabled:cursor-not-allowed disabled:opacity-50";
-const textLink = "text-cian underline underline-offset-4";
+  "min-h-12 w-full rounded-lg bg-rojo px-4 font-bold text-white hover:bg-rojo-2 disabled:cursor-not-allowed disabled:bg-line disabled:text-muted";
+const textLink = "font-medium text-rojo-2 underline underline-offset-4 hover:text-rojo-3";
 
 /** Only same site paths ("/panel", "/expediente/abc"), never "//host" or absolute URLs. */
 function safeNext(next: string | null): string | null {
@@ -95,9 +95,12 @@ export default function Entrar() {
           </p>
 
           {error && (
-            <p role="alert" className="mt-4 rounded-lg border border-rojo/50 bg-rojo/10 px-3 py-2 text-sm text-rojo-3">
-              {error}
-            </p>
+            <div role="alert" className="mt-4 flex gap-2.5 rounded-2xl bg-rojo-claro px-4 py-3 text-sm text-rojo-3 ring-1 ring-rojo/25">
+              <span className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-rojo text-xs font-black text-white" aria-hidden>
+                !
+              </span>
+              <span>{error}</span>
+            </div>
           )}
 
           {step === "phone" ? (
@@ -106,13 +109,15 @@ export default function Entrar() {
                 Número de celular con WhatsApp
               </label>
               <div className="flex gap-2">
-                <span className="flex items-center rounded-lg border border-line bg-night px-3 text-muted">+51</span>
+                <span className="flex items-center rounded-lg border border-line bg-panel-2 px-3 font-semibold text-muted" aria-label="Código de país Perú, más 51">+51</span>
                 <input
                   id="phone"
                   className={field}
                   type="tel"
-                  inputMode="tel"
+                  inputMode="numeric"
                   autoComplete="tel-national"
+                  autoFocus
+                  maxLength={15}
                   placeholder="987 654 321"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
