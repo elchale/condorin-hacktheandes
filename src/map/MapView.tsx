@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./map.css";
-import { PANEL_URL } from "../config";
-import { escapeHtml, fmtLongDate, fmtPct, fmtTime, limaDay } from "../lib/format";
+import { escapeHtml, limaDay } from "../lib/format";
 import type { DetectionFeature } from "../types";
-import type { FireCollection } from "../lib/fuentes";
+import { footprintParts, type Part } from "./footprint";
+import { firePopup, layerPopup, popupHtml, riverLabel, riverPopupHtml, spotDetailHtml, spotHtml, type Spot } from "./popups";
 import { AMAZONIA, ANP_ID, FOOTPRINT_ID, layerMinZoom, type ActiveLayer, type MapViewProps } from "./types";
 import { navigate } from "../router";
 
@@ -17,119 +17,19 @@ const TILES = {
   calles: `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
   callesLabels: `${ESRI}/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
 };
+// Leaflet renders attributions as HTML: every one is escaped, ours too.
 const ATTRIB = {
-  sat: "Esri, Maxar, Earthstar Geographics",
-  calles: "Esri, HERE, Garmin, © OpenStreetMap contributors",
+  sat: escapeHtml("Esri, Maxar, Earthstar Geographics"),
+  calles: escapeHtml("Esri, HERE, Garmin, © OpenStreetMap contributors"),
 };
 const C = { red: "#e11d2e", amber: "#f59e0b", yellow: "#facc15", yellowEdge: "#a16207", green: "#22c55e", white: "#ffffff" };
 const CLUSTER_PX = 30;
 const FIRE = "#f97316";
-const CONF: Record<string, string> = { h: "alta", n: "normal", l: "baja" };
 /** Fire dot radius: tiny when the whole country is in view (thousands of points), larger close in. */
 const fireRadius = (frp: number, z: number) => (z < 7 ? 1.4 + Math.min(1.6, Math.sqrt(frp) / 10) : 2.5 + Math.min(5, Math.sqrt(frp) / 4));
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function popupHtml(f: DetectionFeature, p: MapViewProps, riverName: string): string {
-  const d = f.properties;
-  const [lon, lat] = f.geometry.coordinates;
-  const img = p.images[d.image];
-  const gmaps = `https://www.google.com/maps?q=${lat.toFixed(5)},${lon.toFixed(5)}`;
-  const pct = fmtPct(d.confidence);
-  return `<div class="cp">
-    <p class="cp-k${d.alerting ? "" : " cp-k-amber"}">${d.alerting ? "Draga con alerta" : "Posible draga"}</p>
-    <p class="cp-t">Río ${escapeHtml(riverName)}</p>
-    <p class="cp-d">${escapeHtml(fmtLongDate(d.captured_at))}</p>
-    <div class="cp-conf"><span>Confianza</span><b>${pct}</b></div>
-    <div class="cp-bar"><i style="width:${pct}"></i></div>
-    <dl><dt>Satélite</dt><dd>${escapeHtml(d.satellite)}</dd>${img?.model ? `<dt>Modelo</dt><dd>${escapeHtml(img.model)}</dd>` : ""}</dl>
-    <a href="${gmaps}" target="_blank" rel="noopener noreferrer" class="cp-btn">Ver en Google Maps</a>
-    ${p.signedIn ? `<a href="${PANEL_URL}" class="cp-btn cp-panel" data-spa>Abrir en Mi panel</a>` : ""}
-  </div>`;
-}
-
-/** Detections that share one map spot (often the same coordinate: a time series of one place). */
-type Spot = { ll: L.LatLng; items: DetectionFeature[]; same: boolean };
-/** River ring popup: the name, then the live lines (next radar pass, rain for 3 days) when they arrived. */
-function riverPopupHtml(name: string, lines?: string[]): string {
-  const body = lines?.length
-    ? `<ul class="rp-l">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
-    : `<p class="rp-l">Cargando lluvia y pasos de radar.</p>`;
-  return `<div class="cp"><p class="cp-t">Río ${escapeHtml(name)}</p>${body}</div>`;
-}
-
 const POP = { maxWidth: 300, minWidth: 250, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) };
-
-/** White card listing every scene at the spot, newest first; each row opens its detail. */
-function spotHtml(s: Spot, names: Record<string, string>): string {
-  const rivers = [...new Set(s.items.map((f) => f.properties.river))];
-  const river = rivers.length === 1 ? names[rivers[0]] ?? rivers[0] : "";
-  const n = s.items.length;
-  const head = `${n} detecciones en ${s.same ? "este punto" : "esta zona"}${river ? ` del río ${river}` : ""}`;
-  const rows = s.items
-    .map((f) => {
-      const d = f.properties;
-      return `<li><span class="sp-txt"><b>${escapeHtml(fmtLongDate(d.captured_at))}</b><span>${fmtPct(d.confidence)} de confianza · ${escapeHtml(d.satellite)}</span></span><button type="button" class="sp-btn" data-det="${d.id}">Ver detalle</button></li>`;
-    })
-    .join("");
-  return `<div class="cp sp"><p class="cp-k">Mismo lugar, varias fechas</p><p class="sp-h">${escapeHtml(head)}</p><ul class="sp-list">${rows}</ul></div>`;
-}
-
-function layerPopup(props: Record<string, unknown> | null, labels: Record<string, string> | undefined, title: string) {
-  if (!props) return escapeHtml(title);
-  const keys = labels ? Object.keys(labels) : Object.keys(props).slice(0, 4);
-  const rows = keys
-    .filter((k) => props[k] !== undefined && props[k] !== null && props[k] !== "")
-    .map((k) => {
-      const v = props[k];
-      const s = typeof v === "number" ? v.toLocaleString("es-PE") : String(v);
-      return `<dt>${escapeHtml(labels?.[k] ?? k)}</dt><dd>${escapeHtml(s)}</dd>`;
-    })
-    .join("");
-  return `<div class="cp"><p class="cp-k cp-k-muted">${escapeHtml(title)}</p><dl>${rows}</dl></div>`;
-}
-
-function firePopup(p: FireCollection["features"][number]["properties"]): string {
-  const conf = p.confidence ? CONF[p.confidence] : undefined;
-  return `<div class="cp">
-    <p class="cp-k cp-k-amber">Incendio activo</p>
-    <p class="cp-d">${escapeHtml(fmtLongDate(p.at))}, ${escapeHtml(fmtTime(p.at))}</p>
-    <dl><dt>Sensor</dt><dd>${escapeHtml(p.sensor || "VIIRS")}</dd>${
-      Number.isFinite(p.frp) ? `<dt>Potencia</dt><dd>${escapeHtml(p.frp.toLocaleString("es-PE"))} MW</dd>` : ""
-    }${conf ? `<dt>Confianza</dt><dd>${conf}</dd>` : ""}</dl>
-    <p class="cp-d">Fuente: NASA FIRMS</p>
-  </div>`;
-}
-
-/** Bounding box center and planar weight of every polygon part, for the "in view" hectares. */
-type Part = { lat: number; lon: number; year: number; ha: number };
-function footprintParts(gj: GeoJSON.FeatureCollection): Part[] {
-  const out: Part[] = [];
-  for (const f of gj.features) {
-    const year = Number(f.properties?.year) || 0;
-    const total = Number(f.properties?.area_ha) || 0;
-    const g = f.geometry;
-    const polys = g.type === "MultiPolygon" ? g.coordinates : g.type === "Polygon" ? [g.coordinates] : [];
-    const mine: Part[] = [];
-    let sum = 0;
-    for (const poly of polys) {
-      const ring = poly[0];
-      let a = 0;
-      let sx = 0;
-      let sy = 0;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        a += (ring[j][0] - ring[i][0]) * (ring[j][1] + ring[i][1]);
-        sx += ring[i][0];
-        sy += ring[i][1];
-      }
-      const w = Math.abs(a) * Math.cos(((sy / ring.length) * Math.PI) / 180);
-      sum += w;
-      mine.push({ lon: sx / ring.length, lat: sy / ring.length, year, ha: w });
-    }
-    // Scale the planar weights so each year adds up to its published area.
-    for (const p of mine) out.push({ ...p, ha: sum ? (p.ha / sum) * total : 0 });
-  }
-  return out;
-}
 
 export default function MapView(props: MapViewProps) {
   const el = useRef<HTMLDivElement>(null);
@@ -156,7 +56,7 @@ export default function MapView(props: MapViewProps) {
     const names = riverNames();
     const f = spot.items.find((x) => x.properties.id === id);
     if (!f) return spotHtml(spot, names);
-    return `<button type="button" class="sp-back" data-back>Volver a las ${spot.items.length} detecciones</button>${popupHtml(f, latest.current, names[f.properties.river] ?? f.properties.river)}`;
+    return spotDetailHtml(spot, f, latest.current, names[f.properties.river] ?? f.properties.river);
   };
   /** Opens the list card for a spot, or straight on one scene's detail. */
   const openSpot = (spot: Spot, detailId?: number) => {
@@ -459,7 +359,7 @@ export default function MapView(props: MapViewProps) {
         interactive: false,
       })
         // The label is the click target (the ring stays out of the way of the detections inside it).
-        .bindTooltip(`Río ${escapeHtml(r.name)}`, { permanent: true, interactive: true, direction: "right", offset: [own ? 20 : 15, 0], className: own ? "rt rt-own" : "rt" })
+        .bindTooltip(riverLabel(r.name), { permanent: true, interactive: true, direction: "right", offset: [own ? 20 : 15, 0], className: own ? "rt rt-own" : "rt" })
         .bindPopup(() => riverPopupHtml(r.name, latest.current.riverInfo?.[r.slug]), { ...POP, maxWidth: 280, minWidth: 220 })
         .addTo(g);
     }
