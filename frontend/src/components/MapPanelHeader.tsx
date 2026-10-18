@@ -1,16 +1,22 @@
 import { FIRST_YEAR, LAST_YEAR } from "../config";
-import { addDays, shortDay, todayLima, type TimeWindow } from "../lib/days";
+import { addDays, shortDay, todayLima, WINDOW_DAYS, type TimeWindow } from "../lib/days";
 import { fmtAgo, fmtNum } from "../lib/format";
 import type { Totals } from "../types";
 
-/** One plain sentence that says what the map shows, then the period in words. */
-export function Headline({ words }: { words: string }) {
+/** One plain sentence that says what the map shows, then an unmissable notice: only 3 days are shown. */
+export function Headline({ win }: { win: TimeWindow }) {
   return (
     <div className="px-4">
       <h1 className="text-[17px] font-extrabold leading-snug tracking-tight lg:text-lg">Minería ilegal detectada en la Amazonía peruana</h1>
-      <p className="mt-0.5 text-[13px] text-muted">
-        Mostrando: <strong className="font-bold text-ink">{words}</strong>
-      </p>
+      <div role="note" className="mt-2 flex items-start gap-2.5 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2">
+        <span className="tnum mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-400 text-base font-extrabold text-ink" aria-hidden>
+          {WINDOW_DAYS}
+        </span>
+        <p className="text-[13px] leading-snug text-ink">
+          <strong className="block text-[14px] font-extrabold">{win.title}</strong>
+          <span className="tnum">{win.range}.</span> Para ver otros días usa <strong className="font-bold">Viaje en el tiempo</strong>.
+        </p>
+      </div>
     </div>
   );
 }
@@ -18,8 +24,8 @@ export function Headline({ words }: { words: string }) {
 /** At most three numbers, with plain labels. */
 export function Kpis({ detections, alertsSent, ha, onDetections }: { detections: number; alertsSent: number; ha: number; onDetections?: () => void }) {
   const tiles = [
-    { label: "Dragas detectadas", value: detections, tone: "text-rojo" },
-    { label: "Alertas enviadas por WhatsApp", value: alertsSent, tone: "text-ink" },
+    { label: `Dragas detectadas en estos ${WINDOW_DAYS} días`, value: detections, tone: "text-rojo" },
+    { label: "Alertas enviadas por WhatsApp, total", value: alertsSent, tone: "text-ink" },
     { label: `Hectáreas de huella minera, ${FIRST_YEAR} a ${LAST_YEAR}`, value: ha, tone: "text-ink" },
   ];
   return (
