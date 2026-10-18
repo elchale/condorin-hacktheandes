@@ -30,9 +30,15 @@ export function useMapa(token: string | null): MapaState {
     };
     load();
     const id = window.setInterval(load, LIVE_REFRESH_MS);
+    // Back to the tab (or the phone unlocked): the interval skipped while hidden, so refresh now.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [token]);
 
