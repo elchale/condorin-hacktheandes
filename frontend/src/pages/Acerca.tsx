@@ -55,7 +55,7 @@ const DECISIONS = [
   "Alertamos por WhatsApp y no con una app: los equipos de campo ya lo usan y llega con poca señal.",
   "Durante el hackathon enviamos como máximo 50 alertas y solo de escenas de hoy o ayer, para que una prueba no le escriba a nadie de más.",
   "El detector se entrenó, y los eventos de demostración se produjeron, con imágenes de Planet y SkyFi obtenidas a través de un aliado con acceso licenciado.",
-  "Entrar desde el enlace de una alerta de WhatsApp dura 7 días; después se pide el código otra vez.",
+  "El enlace de una alerta de WhatsApp abre solo ese evento y su expediente; para entrar a tu panel se pide el código por WhatsApp.",
   "La API no tiene cola de tareas: las alertas salen en un hilo después de guardar la escena, y si una falla un comando la reintenta.",
   "Este sitio está hecho para funcionar en los celulares más lentos y con la peor señal: primero el texto, el mapa después.",
 ];

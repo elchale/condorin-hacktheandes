@@ -18,6 +18,9 @@ const FRIENDLY: Record<string, string> = {
   code_expired: "El código venció. Pide uno nuevo.",
   code_too_soon: "Ya te enviamos un código hace poco. Espera unos segundos y vuelve a pedirlo.",
   session_invalid: "Tu sesión terminó. Vuelve a entrar.",
+  code_session_required: "Para registrar la presentación entra a tu panel con el código de WhatsApp.",
+  observer_restricted: "Tu cuenta es de observador. Solo un miembro de la ONG puede editar o enviar el expediente.",
+  code_limit: "Pediste muchos códigos. Espera una hora e inténtalo otra vez.",
   network: "No pudimos conectar. Revisa tu señal e inténtalo otra vez.",
   timeout: "La conexión está muy lenta. Inténtalo otra vez.",
 };
@@ -132,3 +135,19 @@ export const requestCode = (phone: string, consent: boolean) =>
 export const signIn = (pending: string, code: string) =>
   apiPost<Omit<Session, "token"> & { token: string }>("/api/v1/auth/entrar", { pending, code }, { auth: false });
 
+
+/**
+ * Sign out: tell the API to end this session (POST /api/v1/auth/salir bumps the session version, so the
+ * token dies everywhere), then forget it here. The local session is cleared even when the call fails.
+ */
+export async function signOut(): Promise<void> {
+  const token = getToken();
+  if (token) {
+    try {
+      await apiPost("/api/v1/auth/salir", {}, { token, timeout: 5000 });
+    } catch {
+      /* offline, already dead, or an API without the endpoint yet: the local session goes anyway */
+    }
+  }
+  clearToken();
+}

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BRAND_NAME, PANEL_URL } from "../config";
 import { useSession } from "../lib/hooks";
-import { clearToken } from "../lib/session";
+import { signOut } from "../lib/api";
 import { firstName } from "../lib/format";
 import { Link } from "../router";
 import { loadAcerca, loadEntrar, loadPanel } from "../routes";
@@ -19,6 +19,18 @@ export function Brand() {
 export function TopBar({ back = false }: { back?: boolean }) {
   const session = useSession();
   const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  // Escape closes the account menu and gives the focus back to its button.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      button.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const who = firstName(session?.member.name) || session?.ong.name || "Mi cuenta";
 
   return (
@@ -49,6 +61,7 @@ export function TopBar({ back = false }: { back?: boolean }) {
             </Link>
             <div className="relative">
               <button
+                ref={button}
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
@@ -69,8 +82,8 @@ export function TopBar({ back = false }: { back?: boolean }) {
                     role="menuitem"
                     type="button"
                     onClick={() => {
-                      clearToken();
                       setOpen(false);
+                      void signOut();
                     }}
                     className="mt-3 min-h-11 w-full rounded-md border border-line text-left px-3 hover:bg-panel-2"
                   >

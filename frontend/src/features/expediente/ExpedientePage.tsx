@@ -1,15 +1,15 @@
 import { Skeleton } from "../shared/Skeleton";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../../lib/api";
+import { useSession } from "../../lib/hooks";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
 import { loadExpediente, saveExpediente } from "../shared/api";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
-import { PageFrame } from "../shared/PageFrame";
+import { PageFrame, PANEL_SIGN_IN } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
 import type { Patch, Payload } from "../../types";
 import { card, fieldId, primaryButton } from "../shared/ui";
-import { useLinkSignIn } from "../shared/useLinkSignIn";
 import { AuthoritiesSection } from "./AuthoritiesSection";
 import { ConfirmSection } from "./ConfirmSection";
 import { DenuncianteSection } from "./DenuncianteSection";
@@ -33,7 +33,8 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [notice, setNotice] = useState("");
   const [emailedTo, setEmailedTo] = useState<string[]>();
-  const { signedIn, overlay } = useLinkSignIn(token);
+  // The link token opens this page on its own; the panel needs a real sign in (WhatsApp code).
+  const signedIn = Boolean(useSession());
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -98,7 +99,6 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
   if (loadError) {
     return (
       <Frame signedIn={signedIn}>
-        {overlay}
         <LoadError error={loadError} onRetry={load} />
       </Frame>
     );
@@ -106,7 +106,6 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
   if (!data) {
     return (
       <Frame signedIn={signedIn}>
-        {overlay}
         <OpenInBrowser token={token} />
         <div className="mt-4">
           <Skeleton kind="page" label="Abriendo el expediente" />
@@ -121,7 +120,6 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
 
   return (
     <Frame signedIn={signedIn} saveState={e.status === "draft" ? saveState : "idle"}>
-      {overlay}
       <div className="space-y-4">
         <OpenInBrowser token={token} />
         <header>
@@ -167,7 +165,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
             />
           </>
         ) : (
-          <FilingSection token={token} expediente={e} authorities={authorities} emailedTo={emailedTo} save={save} />
+          <FilingSection token={token} expediente={e} authorities={authorities} emailedTo={emailedTo} errors={errors} save={save} />
         )}
       </div>
     </Frame>
@@ -179,7 +177,7 @@ const SAVE_LABEL: Record<SaveState, string> = { idle: "", saving: "Guardando…"
 function Frame({ signedIn, saveState = "idle", children }: { signedIn: boolean; saveState?: SaveState; children: ReactNode }) {
   return (
     <PageFrame
-      back={signedIn ? { href: "/panel", label: "Mi panel" } : undefined}
+      back={signedIn ? { href: "/panel", label: "Mi panel" } : PANEL_SIGN_IN}
       status={
         <span aria-live="polite" className={saveState === "error" ? "font-semibold text-rojo-3" : "text-muted"}>
           {SAVE_LABEL[saveState]}

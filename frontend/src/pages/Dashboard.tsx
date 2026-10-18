@@ -1,26 +1,24 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { FIRST_YEAR, FOOTPRINT_HA, LAST_YEAR, RIVER_FALLBACK } from "../config";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FIRST_YEAR, LAST_YEAR, RIVER_FALLBACK } from "../config";
 import { makeWindow, nearestDays, shortDay, todayLima } from "../lib/days";
-import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
-import { forecastDays, nextPass, oldestFetch, slugKey, useFuentes } from "../lib/fuentes";
-import { fmtAgo, fmtNum, limaDay } from "../lib/format";
+import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter } from "../components/Panels";
+import { fmtAgo, limaDay } from "../lib/format";
 import { DataDays, Headline, Kpis, Legend, TimeTravel, UpdatedLine } from "../components/MapPanelHeader";
 import { TopBar } from "../components/TopBar";
 import { WelcomeOverlay } from "../components/WelcomeOverlay";
 import { useMapa, useMedia, useSession } from "../lib/hooks";
 import { initialSaveData, rememberSaveData, whenIdle } from "../lib/net";
-import { getItem, getJSON, setItem } from "../lib/storage";
 import { navigate, useLocation } from "../router";
-import type { DetectionFeature, LayerMeta, Mapa, SceneImage } from "../types";
-import { ANP_ID, DEFAULT_LAYERS, FOOTPRINT_ID, layerMinZoom, type ActiveLayer, type Basemap, type MapCommand, type ResolvedRiver } from "../map/types";
+import type { DetectionFeature, Mapa, SceneImage } from "../types";
+import { ANP_ID, FOOTPRINT_ID, layerMinZoom, type Basemap, type MapCommand, type ResolvedRiver } from "../map/types";
+import { HANDLE, useBottomSheet } from "./dashboard/useBottomSheet";
+import { useLayers } from "./dashboard/useLayers";
+import { FIRE_COLOR, useLiveFeeds } from "./dashboard/useLiveFeeds";
 
 const loadMap = () => import("../map/MapView");
 const MapView = lazy(loadMap);
 
 type Tab = "detecciones" | "rios" | "capas";
-const LAYERS_KEY = "condorin.capas";
-const HANDLE = 24;
-const FIRE_COLOR = "#f97316";
 const FOOTPRINT_YEARS: [number, number] = [FIRST_YEAR, LAST_YEAR];
 
 function resolveRivers(data: Mapa): ResolvedRiver[] {
@@ -42,13 +40,6 @@ function resolveRivers(data: Mapa): ResolvedRiver[] {
   // Rivers with detections first (the one being watched right now on top).
   out.sort((a, b) => b.detections - a.detections || a.name.localeCompare(b.name));
   return out;
-}
-
-/** Remembered layer choice, or the defaults (footprint and protected areas). Save data mode starts empty. */
-function initialLayers(saveData: boolean): Set<string> {
-  if (saveData) return new Set();
-  if (getItem(LAYERS_KEY) === null) return new Set(DEFAULT_LAYERS);
-  return new Set(getJSON<string[]>(LAYERS_KEY, []));
 }
 
 export function Dashboard() {
@@ -121,6 +112,7 @@ export function Dashboard() {
       return;
     }
     return whenIdle(() => setMapWanted(true), 2500);
+    // Mount only: turning save data on later must not unload the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const wantMap = useCallback(() => {
@@ -130,146 +122,12 @@ export function Dashboard() {
     }
   }, [mapWanted]);
 
-  // Static layers (Data contract C). layers.json and the default layers are fetched at once, in
-  // parallel with the map chunk, so the footprint paints with the first tiles.
-  const [metas, setMetas] = useState<LayerMeta[]>([]);
-  const [activeIds, setActiveIds] = useState<Set<string>>(() => initialLayers(initialSaveData()));
-  const [layerData, setLayerData] = useState<Record<string, GeoJSON.GeoJsonObject>>({});
-  const [layerStatus, setLayerStatus] = useState<Record<string, LayerStatus>>({});
-
-  const fetchLayer = useCallback((m: LayerMeta) => {
-    setLayerStatus((s) => ({ ...s, [m.id]: "loading" }));
-    fetch(`/data/${m.file}?v=${m.bytes_gzip}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(String(r.status));
-        return r.json();
-      })
-      .then((gj: GeoJSON.GeoJsonObject) => {
-        setLayerData((d) => ({ ...d, [m.id]: gj }));
-        setLayerStatus((s) => ({ ...s, [m.id]: "ready" }));
-      })
-      .catch(() => setLayerStatus((s) => ({ ...s, [m.id]: "error" })));
-  }, []);
-
-  const started = useRef(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/data/layers.json")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((x: unknown) => {
-        if (!alive) return;
-        const list = Array.isArray(x) ? (x as LayerMeta[]) : [];
-        setMetas(list);
-        if (started.current) return;
-        started.current = true;
-        list.filter((m) => activeIds.has(m.id)).forEach(fetchLayer);
-      })
-      .catch(() => alive && setMetas([]));
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const toggleLayer = (m: LayerMeta) => {
-    wantMap();
-    const next = new Set(activeIds);
-    if (next.has(m.id) && layerStatus[m.id] !== "error") next.delete(m.id);
-    else {
-      next.add(m.id);
-      if (!layerData[m.id]) fetchLayer(m);
-    }
-    setActiveIds(next);
-    setItem(LAYERS_KEY, JSON.stringify([...next]));
-  };
-
-  const activeLayers = useMemo<ActiveLayer[]>(
-    () => metas.filter((m) => activeIds.has(m.id) && layerData[m.id]).map((m) => ({ meta: m, data: layerData[m.id] })),
-    [metas, activeIds, layerData],
-  );
-
-  // Footprint hectares up to the chosen year: from the file once loaded, the bundled table before.
-  const yearHa = useMemo(() => {
-    const fc = layerData[FOOTPRINT_ID] as GeoJSON.FeatureCollection | undefined;
-    if (!fc?.features) return FOOTPRINT_HA;
-    const t: Record<number, number> = {};
-    for (const f of fc.features) t[Number(f.properties?.year)] = Number(f.properties?.area_ha) || 0;
-    return t;
-  }, [layerData]);
-  // The footprint is yearly and cumulative: the time window never filters it.
-  const ha = useMemo(() => Object.values(yearHa).reduce((s, v) => s + v, 0), [yearHa]);
+  const { metas, activeIds, layerStatus, toggleLayer, activeLayers, ha } = useLayers(wantMap);
 
   // Live feeds (fires, Global Forest Watch tiles, river radar and rain): fetched once the map is up.
   const [mapReady, setMapReady] = useState(false);
   const onMapReady = useCallback(() => setMapReady(true), []);
-  const feeds = useFuentes(mapReady);
-  const [firesOn, setFiresOn] = useState(false);
-  const [tilesOn, setTilesOn] = useState<Set<string>>(() => new Set());
-  const fireCount = feeds?.fires.features.length ?? 0;
-  const activeTiles = useMemo(() => (feeds?.tile_layers ?? []).filter((t) => tilesOn.has(t.id)), [feeds, tilesOn]);
-  const extras = useMemo<ExtraLayer[]>(() => {
-    if (!feeds) return [];
-    const out: ExtraLayer[] = [];
-    if (fireCount)
-      out.push({
-        id: "fires",
-        title: "Incendios (7 días, NASA FIRMS)",
-        sub: `${fmtNum(fireCount)} focos de calor detectados por satélite`,
-        color: FIRE_COLOR,
-        on: firesOn,
-        onToggle: () => {
-          wantMap();
-          setFiresOn((v) => !v);
-        },
-      });
-    for (const t of feeds.tile_layers)
-      out.push({
-        id: t.id,
-        title: t.title,
-        sub: `${t.attribution}. Se ve desde el zoom ${t.min_zoom}.`,
-        color: "#db2777",
-        on: tilesOn.has(t.id),
-        onToggle: () => {
-          wantMap();
-          setTilesOn((s) => {
-            const n = new Set(s);
-            if (n.has(t.id)) n.delete(t.id);
-            else n.add(t.id);
-            return n;
-          });
-        },
-      });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feeds, fireCount, firesOn, tilesOn]);
-  const liveCredits = useMemo(() => {
-    const out: { id: string; label: string; credit: string; url?: string }[] = [];
-    if (firesOn && feeds) out.push({ id: "fires", label: "Incendios", credit: feeds.sources.firms?.attribution || "NASA FIRMS", url: feeds.sources.firms?.url });
-    for (const t of activeTiles) out.push({ id: t.id, label: t.title, credit: t.attribution, url: "https://www.globalforestwatch.org" });
-    if (feeds) {
-      const src = feeds.sources;
-      if (src["open-meteo"]?.ok) out.push({ id: "open-meteo", label: "Lluvia y pronóstico", credit: src["open-meteo"].attribution, url: src["open-meteo"].url });
-      if (src.glofas?.ok) out.push({ id: "glofas", label: "Caudal de los ríos", credit: src.glofas.attribution, url: src.glofas.url });
-      if (src.sentinel?.ok) out.push({ id: "sentinel", label: "Pasos de radar", credit: src.sentinel.attribution, url: src.sentinel.url });
-    }
-    return out;
-  }, [firesOn, feeds, activeTiles]);
-  const liveAt = feeds ? oldestFetch(feeds.sources) : null;
-  // Popup lines for each river ring on the map: next radar pass and rain for the next 3 days.
-  const riverInfo = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    if (!feeds) return out;
-    for (const r of rivers) {
-      const k = slugKey(r.slug);
-      const lines: string[] = [];
-      const pass = nextPass(feeds.satellite[k]);
-      if (pass) lines.push(`Próximo paso de radar: ${pass}`);
-      for (const d of forecastDays(feeds.weather[k]).slice(0, 3))
-        lines.push(`Lluvia ${d.day}: ${Math.round(d.rain_mm)} mm${d.rain_prob != null ? ` (probabilidad ${d.rain_prob} %)` : ""}`);
-      if (lines.length) out[r.slug] = lines;
-    }
-    return out;
-  }, [feeds, rivers]);
+  const { feeds, firesOn, fireCount, activeTiles, extras, liveCredits, liveAt, riverInfo } = useLiveFeeds(mapReady, rivers, wantMap);
 
   // Dense layers that are on but hidden at this zoom (the map draws them from zoom 9 up).
   const farLayers =
@@ -281,62 +139,7 @@ export function Dashboard() {
       : [];
   const busy = tilesLoading || Object.values(layerStatus).includes("loading");
 
-  // Bottom sheet (phones): three snap points driven by a CSS variable. The peek shows the handle,
-  // the stats and the year slider; it is measured, so it fits any font size.
-  const sheet = useRef<HTMLElement>(null);
-  const peekBox = useRef<HTMLDivElement>(null);
-  const [snap, setSnap] = useState<0 | 1 | 2>(0); // 0 peek, 1 half, 2 full
-  const [sheetH, setSheetH] = useState(0);
-  const [peek, setPeek] = useState(190);
-  useLayoutEffect(() => {
-    const measure = () => {
-      setSheetH(sheet.current?.offsetHeight ?? 0);
-      // Collapsed, the sheet takes about a quarter of the screen (the rest shows on the half snap).
-      if (peekBox.current) setPeek(Math.min(HANDLE + peekBox.current.offsetHeight + 8, Math.max(150, Math.round(window.innerHeight * 0.25))));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-  const snapY = (s: 0 | 1 | 2) => (s === 2 ? 0 : s === 1 ? Math.round(sheetH * 0.16) : Math.max(0, sheetH - peek));
-  const justDragged = useRef(false);
-  const drag = useRef<{ y0: number; t0: number; base: number; moved: boolean } | null>(null);
-
-  const onDown = (e: RPointerEvent) => {
-    if (desktop) return;
-    drag.current = { y0: e.clientY, t0: performance.now(), base: snapY(snap), moved: false };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    sheet.current?.classList.add("dragging");
-  };
-  const onMove = (e: RPointerEvent) => {
-    const d = drag.current;
-    if (!d || !sheet.current) return;
-    const dy = e.clientY - d.y0;
-    if (Math.abs(dy) > 6) d.moved = true;
-    const y = Math.min(snapY(0), Math.max(0, d.base + dy));
-    sheet.current.style.setProperty("--sheet-y", `${y}px`);
-  };
-  const onUp = (e: RPointerEvent) => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d || !sheet.current) return;
-    sheet.current.classList.remove("dragging");
-    sheet.current.style.removeProperty("--sheet-y");
-    justDragged.current = d.moved;
-    if (!d.moved) return;
-    const dy = e.clientY - d.y0;
-    const v = dy / Math.max(1, performance.now() - d.t0); // px per ms
-    const y = d.base + dy;
-    let next: 0 | 1 | 2;
-    if (v < -0.5) next = snap === 0 ? 1 : 2;
-    else if (v > 0.5) next = snap === 2 ? 1 : 0;
-    else {
-      const opts: (0 | 1 | 2)[] = [0, 1, 2];
-      next = opts.reduce((best, s) => (Math.abs(snapY(s) - y) < Math.abs(snapY(best) - y) ? s : best), 0 as 0 | 1 | 2);
-    }
-    setSnap(next);
-  };
-  const dragProps = desktop ? {} : { onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp };
+  const { sheet, peekBox, snap, setSnap, peek, snapY, dragProps, onHandleClick } = useBottomSheet(desktop);
 
   const openTab = (t: Tab) => {
     setTab(t);
@@ -384,7 +187,6 @@ export function Dashboard() {
     ...(metas.length || extras.length ? [{ id: "capas" as Tab, label: "Capas" }] : []),
   ];
   const currentTab = tab === "capas" && !metas.length && !extras.length ? "detecciones" : tab;
-  const expanded = !desktop && snap > 0;
   const legend = (
     <Legend
       footprint={activeIds.has(FOOTPRINT_ID)}
@@ -475,8 +277,6 @@ export function Dashboard() {
         <aside
           ref={sheet}
           aria-label="Datos del mapa"
-          role={expanded ? "dialog" : undefined}
-          aria-modal={expanded ? false : undefined}
           className="sheet fixed inset-x-0 bottom-0 z-[1000] flex h-[calc(100dvh-96px)] flex-col rounded-t-3xl bg-white shadow-[0_-10px_30px_rgba(24,24,27,.18)] lg:static lg:order-1 lg:h-full lg:w-[380px] lg:shrink-0 lg:rounded-none lg:border-r lg:border-line lg:shadow-none"
           style={desktop ? undefined : ({ "--sheet-y": `${snapY(snap)}px` } as React.CSSProperties)}
         >
@@ -485,10 +285,7 @@ export function Dashboard() {
             className="flex shrink-0 touch-none items-center justify-center lg:hidden"
             style={{ height: HANDLE }}
             {...dragProps}
-            onClick={() => {
-              if (justDragged.current) return void (justDragged.current = false);
-              setSnap((s) => (s === 0 ? 1 : 0));
-            }}
+            onClick={onHandleClick}
             aria-label={snap === 0 ? "Expandir panel" : "Contraer panel"}
             aria-expanded={snap > 0}
           >

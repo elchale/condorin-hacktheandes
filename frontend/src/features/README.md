@@ -12,9 +12,9 @@ through `shared/PageFrame.tsx` (the SPA `TopBar` plus a slim second bar).
 | `/privacidad` | `legal/PrivacidadPage.tsx` | none |
 | `/terminos` | `legal/TerminosPage.tsx` | none |
 
-Evento and expediente also call `POST /api/v1/auth/enlace {token}` once when there is no session
-(`shared/useLinkSignIn.tsx`): the answer `{token, member, ong}` is stored with `saveSession` from
-`src/lib/storage.ts` only if no session exists, and the "Entraste como" overlay is shown.
+Evento and expediente work with the link token alone and never create a session. Without one, they
+offer "Entrar a mi panel" (`/entrar?next=/panel`, the WhatsApp code sign in); `POST /api/v1/auth/enlace`
+is no longer called, so a forwarded alert link cannot open someone else's panel.
 
 `shared/` holds the ported helpers: `api.ts` (every call above, on the one client in `src/lib/api.ts`; the
 payload types live in `src/types.ts`), `ui.ts` (class strings in the console palette), `format.ts`, `Icon.tsx`,

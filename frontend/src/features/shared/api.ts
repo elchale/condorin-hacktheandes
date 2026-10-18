@@ -3,8 +3,7 @@
 
 import { API_URL } from "../../config";
 import { request } from "../../lib/api";
-import { getSession, saveSession } from "../../lib/session";
-import type { Incident, Page, Panel, Patch, Payload, Session, Status } from "../../types";
+import type { Incident, Page, Panel, Patch, Payload, Status } from "../../types";
 
 /** Token only calls: the link token in the path is the whole auth, never the bearer session. */
 const call = <T>(path: string, method: string, body?: unknown) => request<T>(path, { method, body, auth: false, cache: "no-store" });
@@ -19,7 +18,12 @@ export const pdfUrl = (token: string) => `${API_URL}${expPath(token)}?formato=pd
 
 export const loadExpediente = (token: string) => call<Payload>(expPath(token), "GET").then((r) => r.data);
 
-export const saveExpediente = (token: string, patch: Patch) => call<Payload>(expPath(token), "PATCH", patch).then((r) => r.data);
+/** Recording filings needs the member's code session, so that patch also carries the stored bearer. */
+export const saveExpediente = (token: string, patch: Patch) =>
+  ("filings" in patch
+    ? request<Payload>(expPath(token), { method: "PATCH", body: patch, cache: "no-store" })
+    : call<Payload>(expPath(token), "PATCH", patch)
+  ).then((r) => r.data);
 
 export type SendResult =
   | { status: 202; data: { status: "code_sent"; phone_hint: string; expires_in: number } }
@@ -59,22 +63,3 @@ export const loadIncidents = (session: string, page: number) =>
 /** The member's personal expediente token for one incident (created if they had no alert for it). */
 export const expedienteToken = (session: string, incidentId: number) =>
   callAs<{ token: string }>(session, `/api/v1/me/incidentes/${incidentId}/expediente`, "POST", {}).then((r) => r.data);
-
-export type LinkSignIn = { signedIn: boolean; fresh?: boolean; name?: string; ong?: string };
-
-/**
- * Opening a WhatsApp alert link signs in the member it was sent to (POST /api/v1/auth/enlace, 7 days).
- * An existing session is never replaced, so a forwarded link cannot switch accounts. Never throws.
- */
-export async function signInWithLink(token: string): Promise<LinkSignIn> {
-  if (getSession()) return { signedIn: true };
-  if (!/^[\w-]{16,64}$/.test(token)) return { signedIn: false };
-  try {
-    const { data } = await call<Session>("/api/v1/auth/enlace", "POST", { token });
-    if (!data?.token) return { signedIn: false };
-    if (!getSession()) saveSession({ token: data.token, member: data.member, ong: data.ong });
-    return { signedIn: true, fresh: true, name: data.member?.name, ong: data.ong?.name };
-  } catch {
-    return { signedIn: false };
-  }
-}
