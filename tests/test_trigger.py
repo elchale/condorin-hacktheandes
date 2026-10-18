@@ -76,9 +76,10 @@ def test_procesar_502_when_job_cannot_start(client, monkeypatch):
     assert r.status_code == 502 and "403" not in r.text
 
 
-def test_healthz(client):
+def test_health(client):
     c, _ = client
-    assert c.get("/healthz").json() == {"ok": True}
+    assert c.get("/health").json() == {"ok": True}
+    assert c.get("/healthz").status_code == 404  # reserved by Cloud Run; must not be relied on
 
 
 @pytest.mark.parametrize("images,tasks", [(1, 1), (200, 1), (201, 2), (1999, 10), (50_000, 10)])
