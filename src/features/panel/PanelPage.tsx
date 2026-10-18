@@ -10,6 +10,7 @@ import { Skeleton } from "../shared/Skeleton";
 import { card, primaryButton } from "../shared/ui";
 import { IncidentCard } from "./IncidentCard";
 import { PanelTotals } from "./PanelTotals";
+import { TodayClock } from "./TodayClock";
 
 const UNKNOWN: ApiError = { message: "No pudimos conectarnos con Ojo de Cóndor. Inténtalo otra vez en un momento.", type: "unknown", field_errors: {} };
 
@@ -114,6 +115,8 @@ export default function PanelPage(_props: { token?: string }) {
             : "Tu ONG todavía no vigila ningún río."}
         </p>
       </header>
+
+      <TodayClock clock={data.clock} />
 
       {member.joined_now && (
         <p className="mt-6 rounded-2xl bg-verde/10 p-4 text-sm text-ink" role="status">

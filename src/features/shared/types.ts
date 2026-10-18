@@ -129,6 +129,8 @@ export type Incident = {
 };
 
 export type Panel = {
+  /** The API's clock: today's date and time, real or simulated. */
+  clock?: import("../../lib/clock").Clock;
   member: { name: string; phone: string; joined_now: boolean };
   ong: { name: string; rivers: { slug: string; name: string; protected_area: string }[]; members: number };
   totals: { incidents: number; without_expediente: number; draft: number; ready: number; filed: number };

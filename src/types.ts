@@ -78,6 +78,8 @@ export type Mine = {
 
 export type Mapa = {
   generated_at: string;
+  /** The API's clock (real or the demo day); absent in old snapshots. */
+  clock?: import("./lib/clock").Clock;
   brand: string;
   bbox: [number, number, number, number] | null;
   totals: Totals;

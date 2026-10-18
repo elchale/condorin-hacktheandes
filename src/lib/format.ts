@@ -1,3 +1,5 @@
+import { nowMs } from "./clock";
+
 const LOCALE = "es-PE";
 const TZ = "America/Lima";
 
@@ -26,7 +28,7 @@ export function fmtMonth(month: string): string {
 }
 
 /** "hace 5 min", "hace 3 h", "hace 2 días", or a short date. */
-export function fmtAgo(iso: string, now = Date.now()): string {
+export function fmtAgo(iso: string, now = nowMs()): string {
   const s = Math.max(0, (now - new Date(iso).getTime()) / 1000);
   if (s < 60) return "hace un momento";
   if (s < 3600) return `hace ${Math.round(s / 60)} min`;

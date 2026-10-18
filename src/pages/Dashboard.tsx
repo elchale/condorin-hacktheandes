@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { buildPeriods, DEFAULT_PERIOD, FOOTPRINT_HA, RIVER_FALLBACK } from "../config";
 import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, TodayRivers, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
 import { forecastDays, nextPass, oldestFetch, slugKey, useFuentes } from "../lib/fuentes";
+import { nowMs } from "../lib/clock";
 import { fmtAgo, fmtNum } from "../lib/format";
 import { Headline, Kpis, Legend, PeriodSelector, UpdatedLine } from "../components/MapPanelHeader";
 import { TopBar } from "../components/TopBar";
@@ -82,7 +83,7 @@ export function Dashboard() {
   );
   const inTime = useMemo(() => {
     const [from, to] = period.years;
-    const since = period.days ? Date.now() - period.days * 86400_000 : 0;
+    const since = period.days ? nowMs() - period.days * 86400_000 : 0;
     return sorted.filter((f) => {
       const y = Number(f.properties.captured_at.slice(0, 4));
       return y >= from && y <= to && (!since || new Date(f.properties.captured_at).getTime() >= since);

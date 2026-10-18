@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { LIVE_REFRESH_MS } from "../config";
 import type { Mapa, Session } from "../types";
 import { fetchMapa } from "./api";
+import { syncClock } from "./clock";
 import { SNAPSHOT } from "./snapshot";
 import { getSession, subscribeSession } from "./session";
 
@@ -20,7 +21,11 @@ export function useMapa(token: string | null): MapaState {
     const load = () => {
       if (document.visibilityState === "hidden") return;
       fetchMapa()
-        .then((data) => alive && setState({ data, live: true, checkedAt: Date.now() }))
+        .then((data) => {
+          if (!alive) return;
+          syncClock(data.clock);
+          setState({ data, live: true, checkedAt: Date.now() });
+        })
         .catch(() => alive && setState((s) => ({ ...s, live: false, checkedAt: Date.now() })));
     };
     load();
