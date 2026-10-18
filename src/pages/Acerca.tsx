@@ -50,10 +50,13 @@ const DECISIONS = [
   "Usamos el radar Sentinel-1, que pasa cada 2 a 6 días y atraviesa las nubes. Solo sirve en ríos anchos.",
   "Las balsas en ríos de menos de 30 m de ancho no se ven con datos gratuitos. Hoy quedan fuera.",
   "La mejora es el radar pagado (ICEYE), con imágenes en menos de un día pero con costo por escena.",
-  "Las escenas de demostración son imágenes reales de Planet de 2016 y 2017 con fechas simuladas.",
+  "Los dos eventos de ayer en el río Yaguas son escenas de prueba del detector; movimos su fecha a ayer para la demostración. La escena de hoy entra en vivo.",
+  "El detector corre cuando lo llamamos al terminar de subir las imágenes, no con cada archivo: el bucket avisa archivo por archivo y no sabe cuándo terminó la carga.",
+  "Alertamos por WhatsApp y no con una app: los equipos de campo ya lo usan y llega con poca señal.",
+  "Durante el hackathon enviamos como máximo 50 alertas y solo de escenas de hoy o ayer, para que una prueba no le escriba a nadie de más.",
   "El detector se entrenó, y los eventos de demostración se produjeron, con imágenes de Planet y SkyFi obtenidas a través de un aliado con acceso licenciado.",
   "Entrar desde el enlace de una alerta de WhatsApp dura 7 días; después se pide el código otra vez.",
-  "La API no tiene cola de tareas: cada escena se procesa en la misma solicitud que la recibe.",
+  "La API no tiene cola de tareas: las alertas salen en un hilo después de guardar la escena, y si una falla un comando la reintenta.",
   "Este sitio está hecho para funcionar en los celulares más lentos y con la peor señal: primero el texto, el mapa después.",
 ];
 
