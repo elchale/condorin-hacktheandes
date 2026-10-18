@@ -29,17 +29,18 @@ dead-lettering are simple. Details: [`CLAUDE.md`](CLAUDE.md) (context and decisi
 
 ```bash
 make install        # uv venv + CPU torch + package with [serve,dev]
-make test           # ruff-free pytest run; no GPU, weights or GCS needed
+make test           # pytest; no GPU, weights or GCS needed (make lint for ruff)
 make run-local      # FAKE_MODEL=1, results in ./out, webhook events only logged
 # in another shell:
 make smoke          # generates 5 fake images, POSTs a batch, polls GET /batches/{id}, prints webhook payloads
+make django-test    # example Django receiver tests (needs `pip install django`)
 ```
 
-Single image:
+Single image (after `make smoke` generated some):
 
 ```bash
-curl -s localhost:8080/detect -H 'content-type: application/json' \
-  -d '{"image_uri": "out/smoke/images/yaguas/tile_r000_c000_sw_-2.78_-70.97_ne_-2.77_-70.96.jpg"}' | jq
+IMG=$(ls out/smoke/images/yaguas/*.jpg | head -1)
+curl -s localhost:8080/detect -H 'content-type: application/json' -d "{\"image_uri\": \"$IMG\"}" | jq
 ```
 
 `image_uri` accepts `gs://bucket/object`, `file:///abs/path` or a local path.
