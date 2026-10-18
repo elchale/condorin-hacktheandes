@@ -1,4 +1,4 @@
-"""Service settings, read from environment variables (BUILD_INSTRUCTIONS.md Appendix D)."""
+"""Service settings, read from environment variables."""
 
 from __future__ import annotations
 

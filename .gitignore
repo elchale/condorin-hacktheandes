@@ -44,5 +44,8 @@ models/*/
 .vscode/
 .DS_Store
 
-# Claude Code local settings
-.claude/settings.local.json*
+# Agent instructions (kept locally, not published)
+CLAUDE.md
+BUILD_INSTRUCTIONS.md
+AGENTS.md
+.claude/

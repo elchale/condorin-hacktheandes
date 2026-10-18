@@ -39,7 +39,7 @@ if (( ! DRY_RUN )); then
   gcloud run regions list --project "$PROJECT" --format='value(locationId)' | grep -qx "$REGION" \
     || { echo "Cloud Run is not offered in $REGION" >&2; exit 1; }
   gcloud tasks locations list --project "$PROJECT" --format='value(locationId)' | grep -qx "$REGION" \
-    || { echo "Cloud Tasks is not offered in $REGION: STOP and decide with the team (see CLAUDE.md)." >&2; exit 1; }
+    || { echo "Cloud Tasks is not offered in $REGION: STOP and decide with the team." >&2; exit 1; }
   gcloud artifacts locations list --project "$PROJECT" --format='value(name)' | grep -qx "$REGION" \
     || { echo "Artifact Registry is not offered in $REGION" >&2; exit 1; }
   # Secret Manager user-managed replication location: VERIFY (secrets create fails clearly if not).

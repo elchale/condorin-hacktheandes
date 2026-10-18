@@ -21,8 +21,7 @@ Django ──(gs:// URIs, ≤100)──▶ POST /batches (detector)  ── one 
 ```
 
 Results are stored before delivery, so webhook retries never hold a detector instance, and replays and
-dead-lettering are simple. Details: [`CLAUDE.md`](CLAUDE.md) (context and decisions),
-[`BUILD_INSTRUCTIONS.md`](BUILD_INSTRUCTIONS.md) (build plan), [`docs/webhook.md`](docs/webhook.md) (contract),
+dead-lettering are simple. Details: [`docs/webhook.md`](docs/webhook.md) (contract),
 [`docs/runbook.md`](docs/runbook.md) (operations).
 
 ## Quickstart (fake model, no GCP needed)
@@ -61,7 +60,7 @@ Matches how the model was evaluated in the (separate) training toolkit:
 
 ```
 src/condorin/
-  config.py          settings from env vars (BUILD_INSTRUCTIONS.md Appendix D)
+  config.py          settings from env vars
   core/              model card, tiling, detector (YOLO + fake), NMS, QC, decision, geo/meta, river gate
   io/                storage (gs:// + local), overlay rendering
   service/           detector FastAPI app: /detect, /batches, /healthz, /readyz
@@ -75,7 +74,7 @@ models/README.md     how to publish a model (weights never in git)
 
 ## Configuration
 
-All settings are environment variables; see `src/condorin/config.py` and `BUILD_INSTRUCTIONS.md` Appendix D.
+All settings are environment variables; see `src/condorin/config.py`.
 The webhook bearer token lives only in Secret Manager (`WEBHOOK_TOKEN`) and is never logged.
 
 ## Licence
