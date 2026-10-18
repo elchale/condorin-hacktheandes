@@ -3,7 +3,7 @@ export { BRAND_NAME } from "./lib/brand";
 export const API_URL: string = (import.meta.env.VITE_API_URL ?? "https://api.condorin.pe").replace(/\/$/, "");
 
 /** Public site origin (this SPA is served there; used for absolute links and share images). */
-export const SITE_URL = "https://condorin.pe";
+export const SITE_URL = "https://www.condorin.pe";
 export const PANEL_URL = "/panel";
 export const PRIVACY_URL = "/privacidad";
 export const TERMS_URL = "/terminos";

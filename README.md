@@ -80,12 +80,12 @@ map chunk 46 KB JS + 3 KB CSS (Leaflet included); Entrar 2 KB; Acerca 3.6 KB.
 
 ## Deploy
 
-Any static host. `vercel.json` (Vercel) and `public/_headers` + `public/_redirects` (Cloudflare Pages, Netlify)
-carry the same rules:
+Vercel, on push to main. `vercel.json` carries every rule:
 
 - every unknown path rewrites to `/index.html` (client side routes);
-- `/assets/*` (hashed file names) and `/data/*` (layer files, fetched with a `?v=` version) are
-  `Cache-Control: public, max-age=31536000, immutable`; `layers.json` is cached for one hour;
+- `/assets/*` (hashed file names) are `Cache-Control: public, max-age=31536000, immutable`; `/data/*`
+  (layer files, fetched with a `?v=<gzip bytes>` version, not a content hash) are cached for one hour
+  and revalidated, and so is `layers.json`;
 - `index.html` is revalidated on every load, so a deploy is picked up at once;
 - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`.
 
