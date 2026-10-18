@@ -8,6 +8,8 @@ import io
 import logging
 from xml.sax.saxutils import escape
 
+from PIL import Image as PILImage
+from PIL import ImageDraw
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -23,7 +25,8 @@ from .drafting import earlier_sightings, place_sentence
 
 logger = logging.getLogger(__name__)
 
-MARCA = colors.HexColor('#e11d2e')
+MARCA_HEX = '#e11d2e'
+MARCA = colors.HexColor(MARCA_HEX)
 GRIS = colors.HexColor('#52525b')
 BORDE = colors.HexColor('#e3e3e8')
 
@@ -58,19 +61,74 @@ def _table(rows: list[list], widths: list[float]) -> Table:
     return table
 
 
-def _crop_image(detection):
-    if not detection.crop_uri:
-        return None
-    try:
-        bucket, name, generation = gcs.parse_gs_uri(detection.crop_uri)
-        content, _ = gcs.download(bucket, name, detection.crop_generation or generation)
-    except (ValueError, gcs.StorageUnavailable) as exc:
-        logger.warning('pdf: crop %s unavailable: %s', detection.crop_uri, exc)
-        return None
+def _flowable(content: bytes, side: float) -> Image:
     img = Image(io.BytesIO(content))
-    scale = min(7 * cm / img.imageWidth, 7 * cm / img.imageHeight)
+    scale = min(side / img.imageWidth, side / img.imageHeight)
     img.drawWidth, img.drawHeight = img.imageWidth * scale, img.imageHeight * scale
     return img
+
+
+def _png(picture) -> bytes:
+    out = io.BytesIO()
+    picture.save(out, format='PNG')
+    return out.getvalue()
+
+
+def _scene_picture(image):
+    """The scene as a Pillow image, read at its pinned version; None when the bucket is unreachable."""
+    try:
+        content, _ = gcs.download(image.bucket, image.object_name, image.generation)
+        return PILImage.open(io.BytesIO(content)).convert('RGB')
+    except (gcs.StorageUnavailable, OSError) as exc:
+        logger.warning('pdf: scene %s unavailable: %s', image.gs_uri, exc)
+        return None
+
+
+def _box(detection) -> tuple[int, int, int, int]:
+    x, y, w, h = detection.bbox
+    return x, y, x + w, y + h
+
+
+def _scene_with_boxes(scene, detections):
+    picture = scene.copy()
+    draw = ImageDraw.Draw(picture)
+    width = max(2, picture.width // 400)
+    for i, d in enumerate(detections, start=1):
+        x0, y0, x1, y1 = _box(d)
+        pad = width * 3
+        draw.rectangle([x0 - pad, y0 - pad, x1 + pad, y1 + pad], outline=MARCA_HEX, width=width)
+        draw.text((x1 + pad + 4, y0 - pad), str(i), fill='#ffffff', stroke_width=2, stroke_fill='#000000',
+                  font_size=max(14, picture.width // 50))
+    return _flowable(_png(picture), 14 * cm)
+
+
+def _crop_image(detection, scene):
+    """The detection's crop: its own file when the detector made one, else cut from the scene around the box."""
+    if detection.crop_uri:
+        try:
+            bucket, name, generation = gcs.parse_gs_uri(detection.crop_uri)
+        except ValueError as exc:
+            logger.warning('pdf: crop %s unavailable: %s', detection.crop_uri, exc)
+            return None
+        image = detection.image
+        if (bucket, name) != (image.bucket, image.object_name):
+            try:
+                content, _ = gcs.download(bucket, name, detection.crop_generation or generation)
+            except gcs.StorageUnavailable as exc:
+                logger.warning('pdf: crop %s unavailable: %s', detection.crop_uri, exc)
+                return None
+            return _flowable(content, 7 * cm)
+    if scene is None:
+        return None
+    x0, y0, x1, y1 = _box(detection)
+    half = max(80, 4 * max(x1 - x0, y1 - y0))
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    picture = scene.crop((cx - half, cy - half, cx + half, cy + half))
+    pad = max(2, half // 40)
+    ImageDraw.Draw(picture).rectangle(
+        [x0 - (cx - half) - pad, y0 - (cy - half) - pad, x1 - (cx - half) + pad, y1 - (cy - half) + pad],
+        outline=MARCA_HEX, width=max(2, half // 60))
+    return _flowable(_png(picture), 7 * cm)
 
 
 def _copernicus_credit(image) -> str:
@@ -180,16 +238,23 @@ def build_pdf(expediente, final: bool) -> bytes:
     ]))
 
     # Annex 2 and 3
+    scene = _scene_picture(image)
     story.append(_p('Anexo 2: Recortes de la imagen satelital', 'h'))
     for i, d in enumerate(detections, start=1):
-        img = _crop_image(d)
+        img = _crop_image(d, scene)
         caption = (f'Detección {i}: {coord(d.lat)}, {coord(d.lon)}, confianza {d.confidence:.0%}. '
                    f'Archivo {d.crop_uri or "sin recorte"}'
-                   + (f'#{d.crop_generation}' if d.crop_generation else '')
+                   + (f'#{d.crop_generation}' if d.crop_generation and '#' not in d.crop_uri else '')
                    + (f'. SHA-256 {d.crop_sha256}.' if d.crop_sha256 else '.'))
         story.append(KeepTogether(([img] if img else []) + [_p(caption, 'small'), Spacer(1, 6)]))
 
     story.append(_p('Anexo 3: Imagen satelital original y custodia', 'h'))
+    if scene is not None:
+        story.append(KeepTogether([
+            _scene_with_boxes(scene, detections),
+            _p('Imagen completa; cada recuadro numerado corresponde a una detección de la sección III.', 'small'),
+            Spacer(1, 6),
+        ]))
     story.append(_table([
         ['Dato', 'Valor'],
         ['Satélite', image.satellite],
