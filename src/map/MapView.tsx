@@ -25,6 +25,8 @@ const C = { red: "#e11d2e", amber: "#f59e0b", yellow: "#facc15", yellowEdge: "#a
 const CLUSTER_PX = 30;
 const FIRE = "#f97316";
 const CONF: Record<string, string> = { h: "alta", n: "normal", l: "baja" };
+/** Fire dot radius: tiny when the whole country is in view (thousands of points), larger close in. */
+const fireRadius = (frp: number, z: number) => (z < 7 ? 1.4 + Math.min(1.6, Math.sqrt(frp) / 10) : 2.5 + Math.min(5, Math.sqrt(frp) / 4));
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function popupHtml(f: DetectionFeature, p: MapViewProps, riverName: string): string {
@@ -384,18 +386,32 @@ export default function MapView(props: MapViewProps) {
       const frp = Number(f.properties.frp) || 0;
       L.circleMarker([lat, lon], {
         renderer: renderer.current!,
-        radius: 2.5 + Math.min(5, Math.sqrt(frp) / 4),
+        radius: fireRadius(frp, m.getZoom()),
         color: "#7c2d12",
-        weight: 0.6,
+        weight: m.getZoom() < 7 ? 0 : 0.6,
         fillColor: FIRE,
         fillOpacity: 0.85,
-      })
+        frp,
+      } as L.CircleMarkerOptions)
         .bindPopup(() => firePopup(f.properties), { maxWidth: 240 })
         .addTo(g);
     }
     g.addTo(m);
     fireLayer.current = g;
     detLayer.current?.eachLayer((x) => (x as L.Path).bringToFront?.());
+    const resize = () => {
+      const z = m.getZoom();
+      g.eachLayer((x) => {
+        const c = x as L.CircleMarker;
+        const frp = Number((c.options as { frp?: number }).frp) || 0;
+        c.setRadius(fireRadius(frp, z));
+        c.setStyle({ weight: z < 7 ? 0 : 0.6 });
+      });
+    };
+    m.on("zoomend", resize);
+    return () => {
+      m.off("zoomend", resize);
+    };
   }, [props.fires]);
 
   // Global Forest Watch raster overlays, above the basemap and below the footprint.
