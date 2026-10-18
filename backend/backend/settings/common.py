@@ -164,8 +164,10 @@ REST_FRAMEWORK = {
         'panel_link': '60/minute',
         'mapa': '600/minute',
         'fuentes': '600/minute',
-        'auth_code': '10/hour',
-        'auth_enter': '30/hour',
+        # TODO(prod): back to 10/hour and 30/hour. Raised for the live pitch, where the audience signs up
+        # together from the venue's one public IP; the per phone limits below still stop spam.
+        'auth_code': '200/hour',
+        'auth_enter': '300/hour',
         # Per phone, from any IP (core.throttling.PhoneThrottle), on top of the per IP limits above.
         'auth_code_phone': '6/hour',
         'auth_enter_phone': '20/hour',

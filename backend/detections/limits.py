@@ -29,7 +29,7 @@ def _since(text: str | None) -> datetime | None:
 # HACKATHON_CAP_SINCE; 'none' turns one off), read once at import like the constants they replaced.
 # Only scenes captured today or yesterday (America/Lima calendar days) alert. Default 2.
 HACKATHON_ALERT_WINDOW_DAYS = settings.HACKATHON_ALERT_WINDOW_DAYS
-# Once this many WhatsApp alerts have been sent in total, no further alert goes out. Default 50.
+# Once this many WhatsApp alerts have been sent in total, no further alert goes out. Default 150 (raised from 50 for the live pitch signups).
 HACKATHON_MAX_ALERT_MESSAGES = settings.HACKATHON_MAX_ALERT_MESSAGES
 # Only alerts sent from this instant count toward the cap (reset before the live demo). None counts every alert.
 # Default 2026-10-18 07:50 Lima.
