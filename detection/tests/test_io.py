@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import json
 
-import numpy as np
 import pytest
-from conftest import make_image
 
-from condorin.core.detector import Detection
 from condorin.io import storage
-from condorin.io.overlay import render_overlay
 
 
 def test_local_roundtrip(tmp_path):
@@ -59,17 +55,3 @@ def test_gcs_error_mapping():
     assert isinstance(storage._map_gcs_error(gexc.ServiceUnavailable("x"), "u"), storage.Transient)
     assert isinstance(storage._map_gcs_error(gexc.TooManyRequests("x"), "u"), storage.Transient)
     assert isinstance(storage._map_gcs_error(ConnectionError("x"), "u"), storage.Transient)
-
-
-def test_overlay_downscales_to_jpeg():
-    bgr = make_image(2560, 2000)[..., ::-1]
-    dets = [
-        Detection("mining_vessel", 0.9, (100, 100, 150, 120)),
-        Detection("other_vessel", 0.4, (300, 300, 330, 310)),
-    ]
-    data = render_overlay(bgr, dets, "mining_vessel")
-    assert data[:3] == b"\xff\xd8\xff"
-    import cv2
-
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-    assert max(img.shape[:2]) == 1600

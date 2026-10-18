@@ -1,89 +1,93 @@
 # Runbook
 
-Region `southamerica-west1`. Services: `detector` (CPU, concurrency 1), `notifier`. Queues: `detect`,
-`webhook`. Bucket layout (results bucket):
+Project `wisecai-consultor-prod`, region `us-central1`.
 
-```
-results/<model_version>/<key>.json     one per image × generation × model version
-overlays/<model_version>/<key>.jpg     only for detected / needs_review
-batches/<batch_id>/manifest.json
-failed_deliveries/<sha1(idempotency_key)>.json
-```
+| Resource | What it is |
+|---|---|
+| Cloud Run Job `condorin-detector` | processes `gs://river-images/<PREFIX>*` (CPU, model baked in) |
+| Cloud Run service `condorin-detector-trigger` | `POST /procesar {"prefix"}` starts the Job (IAM-authenticated) |
+| SA `condorin-detector@` | runs both; reads `river-images`, can create (not overwrite) `crops/` |
+| GitHub Actions `CI` | ruff + pytest; on `main` builds and deploys both images |
+| GitHub Actions `Procesar imágenes` | starts runs by hand, and daily at 12:00 UTC for yesterday |
 
-Logs are JSON in Cloud Logging; filter with `jsonPayload.batch_id="..."`, `jsonPayload.idempotency_key="..."`,
-`jsonPayload.image_uri="..."`.
+Repo variables: `MODEL_GCS_URI` (published model folder), `TRIGGER_URL` (trigger URL), `RIVERS`
+(comma-separated rivers for the daily run, default `yaguas`). Secret: `GCP_SA_KEY` (`github-deployer`).
 
-## Submitting work
-
-```bash
-TOKEN=$(gcloud auth print-identity-token)
-curl -s -X POST "$DETECTOR_URL/batches" -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"batch_id": "yaguas-2026-10-15", "prefix": "gs://river-images/yaguas/", "limit": 100}'
-curl -s "$DETECTOR_URL/batches/yaguas-2026-10-15" -H "Authorization: Bearer $TOKEN" | jq .counts
-```
-
-Resubmitting a batch is safe: generations are pinned, results are skipped if present, task names are
-deterministic. `scripts/smoke_test.py --base-url $DETECTOR_URL --id-token $TOKEN --prefix ...` does the same.
-
-## Queue backed up (`detect`)
-
-1. `gcloud tasks queues describe detect --location southamerica-west1` (rate limits, state).
-2. Detector errors? Logs with `severity>=WARNING` on `detector`. A 503 storm usually means GCS throttling
-   or the request budget (`REQUEST_BUDGET_S`) being hit: check `timings_ms.inference`.
-3. Throughput is `max-instances` × (1 / seconds per image). To go faster raise `--max-instances` on the
-   detector **and** `--max-concurrent-dispatches` on the queue together (queue ≤ instances).
-4. Pause/resume: `gcloud tasks queues pause|resume detect --location southamerica-west1`.
-
-## Webhook failures
-
-- **`webhook auth rejected` (401/403)**: the token was rotated or is missing. Tasks keep retrying (72 h).
-  Add the new value: `printf '%s' "$NEW" | gcloud secrets versions add WEBHOOK_TOKEN --data-file=-`,
-  then redeploy the notifier (`--set-secrets ...:latest` is resolved at instance start) or wait for new instances.
-- **Dead-lettered deliveries** (other 4xx, including 409): `gcloud storage ls gs://$RESULTS_BUCKET/failed_deliveries/`.
-  Each file has the event, Django's status and a response snippet. Fix the cause, then replay (below).
-- Tasks that exhausted retries are dropped by Cloud Tasks. Their results are still in `results/`: replay them.
-
-## Replaying an event
-
-The task name `deliver-<sha1(key + model_version)>` cannot be reused for a while after it ran (VERIFY the
-dedupe window in the Cloud Tasks docs), so a replay uses a new suffix:
+## Starting a run
 
 ```bash
-F=gs://$RESULTS_BUCKET/failed_deliveries/<sha1>.json
-gcloud storage cat $F | jq '{event: .event}' > /tmp/event.json
-gcloud tasks create-http-task "replay-$(date +%s)-$(sha1sum <<<"$F" | cut -c1-8)" \
-  --queue webhook --location southamerica-west1 \
-  --url "$NOTIFIER_URL/deliver" --method POST \
-  --header "Content-Type: application/json" --body-file /tmp/event.json \
-  --oidc-service-account-email "tasks-invoker-sa@$PROJECT.iam.gserviceaccount.com"
+URL=$(gcloud run services describe condorin-detector-trigger --region us-central1 --format='value(status.url)')
+curl -X POST "$URL/procesar" -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H 'Content-Type: application/json' -d '{"prefix": "yaguas/2026-10-18"}'
 ```
 
-For a result without a dead-letter file, rebuild the event from `results/<version>/<key>.json`
-(`condorin.notifier.payload.build_webhook_payload`) or simply re-POST the image to `/detect`: an existing
-result skips compute and re-enqueues the webhook (deduplicated by task name while the name is reserved).
+Or **Actions → Procesar imágenes → Run workflow**. The trigger answers 404 if the prefix has no objects,
+202 with the execution name otherwise. Re-running a prefix is always safe (backend dedupe by
+`Idempotency-Key`; crops are write-once).
 
-## Deploying a new model version
+Without the trigger (operators with Job permissions):
 
-1. Publish: `gcloud storage cp best.pt model_card.json gs://$MODEL_BUCKET/models/$VERSION/` (see `models/README.md`).
-   Check that the card validates and its thresholds come from the evaluation (`threshold.json`).
-2. Build + deploy:
-   ```bash
-   gcloud builds submit --region southamerica-west1 --config deploy/cloudbuild.yaml \
-     --substitutions=_MODEL_BUCKET=$MODEL_BUCKET,_MODEL_VERSION=$VERSION,_RESULTS_BUCKET=$RESULTS_BUCKET,_TAG=$(git rev-parse --short HEAD)
-   ```
-   The image tag is `<code>-model<version>`; rollback = redeploy the previous tag
-   (`gcloud run services update-traffic detector --to-revisions <rev>=100`).
-3. Shadow compare (Phase 7): run the candidate on a recent batch with `WEBHOOK_MODE=log` (or a separate
-   results prefix) and compare decisions/scores per image before switching.
-4. Results are namespaced by model version, so the new model re-processes images; note that Django sees the
-   same `Idempotency-Key` for the same image generation (open point in `docs/webhook.md`).
+```bash
+gcloud run jobs execute condorin-detector --region us-central1 --update-env-vars PREFIX=yaguas/2026-10-18 --wait
+```
+
+## Watching a run
+
+```bash
+gcloud run jobs executions list --job condorin-detector --region us-central1 --limit 10
+gcloud run jobs executions describe <execution> --region us-central1
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="condorin-detector"
+  AND jsonPayload.message:"done:"' --project wisecai-consultor-prod --freshness 1d --limit 20 --format json
+```
+
+Each task ends with `done: N reported (M with findings), F failed, of T`, plus `failures_by_reason`,
+`duplicates` and `alerted`. The execution fails (non-zero exit) when any image failed.
+
+## A run failed
+
+Look up `failures_by_reason` in the `done:` log line, then the per-image `image not reported` lines
+(`jsonPayload.status` holds the reason, `jsonPayload.image_uri` the scene).
+
+| Reason | Action |
+|---|---|
+| `no_river`, `no_captured_at` | fix the object path/name or add custom metadata, then re-run the prefix |
+| `no_bounds` | add `bounds` custom metadata (or bounds in the name); these scenes **have findings** |
+| `rejected_qc` | check the file (truncated, too small, mostly blank); replace it if the provider can |
+| `backend_401` / `backend_403` | the SA is not in the backend allowlist: `UPDATE_BACKEND=1 deploy/gcp-setup.sh` |
+| `backend_4xx` (other) | payload refused: read `jsonPayload.response` and raise it with the backend team |
+| `backend_5xx`, `backend_unreachable`, `storage` | transient: re-run the prefix |
+| `no model_card.json` at start | the Job image has no model: publish one and set `MODEL_GCS_URI` |
+
+## Large prefixes
+
+A task has a 1 h timeout (`--task-timeout` in `deploy/gcp-setup.sh`). Split big runs across tasks; each
+task takes every N-th image:
+
+```bash
+gcloud run jobs update condorin-detector --region us-central1 --tasks 4
+```
+
+## Deploying a new model
+
+See `models/README.md`: upload `best.pt` + `model_card.json` to a new `models/<version>/` folder, set
+`MODEL_GCS_URI`, and re-run CI on `main`. The Job image tag is `<git sha>-model<version>`.
+
+Rollback: point the Job at the previous image.
+
+```bash
+gcloud run jobs update condorin-detector --region us-central1 \
+  --image us-central1-docker.pkg.dev/wisecai-consultor-prod/cloud-run-source-deploy/condorin-detector:<old tag>
+```
+
+Also set `MODEL_GCS_URI` back, or the next push to `main` redeploys the newer model.
+
+## Daily schedule
+
+`Procesar imágenes` runs at 12:00 UTC for yesterday (UTC) in every river of `RIVERS`; a river with no
+images that day is skipped. It needs `TRIGGER_URL`. To pause it, disable the workflow:
+`gh workflow disable "Procesar imágenes"` (re-enable with `gh workflow enable`).
 
 ## Measuring the real miss rate
 
-`clear` images are sampled for review at `AUDIT_RATE` (default 1%), flagged `audit_sample: true` in the
-result. Review them; misses found there are the production false-negative rate and new training data.
-
-## Secrets
-
-`WEBHOOK_TOKEN` and `WEBHOOK_URL` live only in Secret Manager. Never put them in env files, CI, chat or logs.
-If a token is ever exposed (pasted anywhere), rotate it with the Django team and add a new secret version.
+Scenes without findings are reported as clean and never reviewed. To estimate misses, have reviewers check a
+random sample of clean scenes regularly; misses found there are also the best new training data.

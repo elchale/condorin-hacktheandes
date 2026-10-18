@@ -20,7 +20,7 @@ class JobSettings(BaseSettings):
     image_suffixes: tuple[str, ...] = (".jpg", ".jpeg", ".png")
     max_images: int | None = Field(None, ge=1)
 
-    # --- model / inference (names match condorin.config.Settings, used by build_detector) ---
+    # --- model / inference (field names are what build_detector reads) ---
     model_dir: str = "/models/current"
     device: Literal["auto", "cpu", "cuda"] = "auto"
     fake_model: bool = False  # dev and tests only; never posts unless ALLOW_FAKE_POST=1

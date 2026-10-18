@@ -23,15 +23,15 @@ from pathlib import Path
 
 import numpy as np
 
-from condorin.config import Settings
 from condorin.core.decision import presence_score
 from condorin.core.detector import build_detector
 from condorin.core.model_card import ModelCard, load_model_card
 from condorin.core.qc import run_qc
 from condorin.core.tiling import tile_offsets
+from condorin.job.config import JobSettings
 
 
-def load(settings: Settings) -> tuple:
+def load(settings: JobSettings) -> tuple:
     if Path(settings.model_dir, "model_card.json").is_file():
         card = load_model_card(settings.model_dir)
     else:
@@ -109,7 +109,7 @@ def main() -> None:
     ap.add_argument("--labels", help="CSV with columns path,has_vessel for per-format recall")
     args = ap.parse_args()
 
-    card, det = load(Settings())
+    card, det = load(JobSettings())
     if args.labels:
         recall_by_format(args, card, det)
     else:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -15,16 +14,6 @@ META_FIELDS = ("river", "satellite", "captured_at", "bounds")
 
 def idempotency_key(bucket: str, obj: str, generation: str) -> str:
     return f"{bucket}/{obj}#{generation}"  # sent as the Idempotency-Key header
-
-
-def task_name(prefix: str, key: str) -> str:
-    # Cloud Tasks names allow only letters, digits, - and _ (max 500 chars): hash the key
-    return f"{prefix}-{hashlib.sha1(key.encode()).hexdigest()}"
-
-
-def result_key(image_uri: str, generation: str, model_version: str) -> str:
-    """Internal idempotency key: names the result file. Includes the model version."""
-    return hashlib.sha1(f"{image_uri}|{generation}|{model_version}".encode()).hexdigest()
 
 
 _BOUNDS = re.compile(
