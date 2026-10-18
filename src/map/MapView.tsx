@@ -3,7 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./map.css";
 import { PANEL_URL } from "../config";
-import { escapeHtml, fmtLongDate, fmtPct, fmtTime } from "../lib/format";
+import { escapeHtml, fmtLongDate, fmtPct, fmtTime, limaDay } from "../lib/format";
 import type { DetectionFeature } from "../types";
 import type { FireCollection } from "../lib/fuentes";
 import { AMAZONIA, ANP_ID, FOOTPRINT_ID, layerMinZoom, type ActiveLayer, type MapViewProps } from "./types";
@@ -45,6 +45,25 @@ function popupHtml(f: DetectionFeature, p: MapViewProps, riverName: string): str
     <a href="${gmaps}" target="_blank" rel="noopener noreferrer" class="cp-btn">Ver en Google Maps</a>
     ${p.signedIn ? `<a href="${PANEL_URL}" class="cp-btn cp-panel" data-spa>Abrir en Mi panel</a>` : ""}
   </div>`;
+}
+
+/** Detections that share one map spot (often the same coordinate: a time series of one place). */
+type Spot = { ll: L.LatLng; items: DetectionFeature[]; same: boolean };
+const POP = { maxWidth: 300, minWidth: 250, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) };
+
+/** White card listing every scene at the spot, newest first; each row opens its detail. */
+function spotHtml(s: Spot, names: Record<string, string>): string {
+  const rivers = [...new Set(s.items.map((f) => f.properties.river))];
+  const river = rivers.length === 1 ? names[rivers[0]] ?? rivers[0] : "";
+  const n = s.items.length;
+  const head = `${n} detecciones en ${s.same ? "este punto" : "esta zona"}${river ? ` del río ${river}` : ""}`;
+  const rows = s.items
+    .map((f) => {
+      const d = f.properties;
+      return `<li><span class="sp-txt"><b>${escapeHtml(fmtLongDate(d.captured_at))}</b><span>${fmtPct(d.confidence)} de confianza · ${escapeHtml(d.satellite)}</span></span><button type="button" class="sp-btn" data-det="${d.id}">Ver detalle</button></li>`;
+    })
+    .join("");
+  return `<div class="cp sp"><p class="cp-k">Mismo lugar, varias fechas</p><p class="sp-h">${escapeHtml(head)}</p><ul class="sp-list">${rows}</ul></div>`;
 }
 
 function layerPopup(props: Record<string, unknown> | null, labels: Record<string, string> | undefined, title: string) {
@@ -119,8 +138,43 @@ export default function MapView(props: MapViewProps) {
   const pendingPopup = useRef<number | null>(null);
   const fireLayer = useRef<L.LayerGroup | null>(null);
   const tileOverlays = useRef<Map<string, L.TileLayer>>(new Map());
+  const spots = useRef<Map<number, Spot>>(new Map());
+  const spotPopup = useRef<{ spot: Spot; popup: L.Popup } | null>(null);
   const latest = useRef(props);
   latest.current = props;
+
+  const riverNames = () => Object.fromEntries(latest.current.rivers.map((r) => [r.slug, r.name]));
+  const detailHtml = (spot: Spot, id: number) => {
+    const names = riverNames();
+    const f = spot.items.find((x) => x.properties.id === id);
+    if (!f) return spotHtml(spot, names);
+    return `<button type="button" class="sp-back" data-back>Volver a las ${spot.items.length} detecciones</button>${popupHtml(f, latest.current, names[f.properties.river] ?? f.properties.river)}`;
+  };
+  /** Opens the list card for a spot, or straight on one scene's detail. */
+  const openSpot = (spot: Spot, detailId?: number) => {
+    const m = map.current;
+    if (!m) return;
+    const popup = L.popup(POP)
+      .setLatLng(spot.ll)
+      .setContent(detailId != null ? detailHtml(spot, detailId) : spotHtml(spot, riverNames()))
+      .openOn(m);
+    spotPopup.current = { spot, popup };
+    if (detailId != null) latest.current.onSelect(detailId);
+  };
+  /** Popup for one detection: its own marker, or the card of the spot it shares. */
+  const openFor = (id: number): boolean => {
+    const mk = markers.current.get(id);
+    if (mk) {
+      mk.openPopup();
+      return true;
+    }
+    const spot = spots.current.get(id);
+    if (spot) {
+      openSpot(spot, id);
+      return true;
+    }
+    return false;
+  };
 
   const fitAmazonia = (animate: boolean) => map.current?.fitBounds(AMAZONIA, { padding: [8, 8], animate });
 
@@ -227,6 +281,7 @@ export default function MapView(props: MapViewProps) {
     if (!m || !g) return;
     g.clearLayers();
     markers.current.clear();
+    spots.current.clear();
     const p = latest.current;
     const names = Object.fromEntries(p.rivers.map((r) => [r.slug, r.name]));
     const mine = new Set(p.mineRivers);
@@ -238,21 +293,34 @@ export default function MapView(props: MapViewProps) {
       if (near) near.items.push(f);
       else groups.push({ pt, items: [f] });
     }
-    // The newest scene gets a soft pulse ring.
-    const newest = p.detections.reduce<DetectionFeature | null>((a, f) => (!a || f.properties.captured_at > a.properties.captured_at ? f : a), null);
+    // Only scenes captured today (Lima) get the soft pulse ring, one per place.
+    const today = limaDay(Date.now());
+    const pulses = new Map<string, [number, number]>();
+    for (const f of p.detections) {
+      if (limaDay(f.properties.captured_at) !== today) continue;
+      const [lon, lat] = f.geometry.coordinates;
+      pulses.set(`${lat.toFixed(4)},${lon.toFixed(4)}`, [lat, lon]);
+    }
     for (const grp of groups) {
       if (grp.items.length > 1) {
         const n = grp.items.length;
         const alert = grp.items.some((f) => f.properties.alerting);
         const ll = m.unproject(grp.pt, z);
         const size = n < 10 ? 34 : 40;
-        const mk = L.marker(ll, {
+        const b = L.latLngBounds(grp.items.map((f) => [f.geometry.coordinates[1], f.geometry.coordinates[0]] as [number, number]));
+        // Same coordinate (a time series of one place): zooming can never split it, so it lists the scenes.
+        const same = b.getNorthEast().distanceTo(b.getSouthWest()) < 30;
+        const list = same || z >= m.getMaxZoom();
+        const items = [...grp.items].sort((a, c) => c.properties.captured_at.localeCompare(a.properties.captured_at));
+        const spot: Spot = { ll: same ? b.getCenter() : ll, items, same };
+        for (const f of items) spots.current.set(f.properties.id, spot);
+        const mk = L.marker(spot.ll, {
           icon: L.divIcon({ className: "", html: `<span class="cl${alert ? "" : " cl-amber"}">${n}</span>`, iconSize: [size, size] }),
           keyboard: true,
-          title: `${n} detecciones, acercar`,
+          title: list ? `${n} detecciones en este punto, ver la lista` : `${n} detecciones, acercar`,
         });
         mk.on("click", () => {
-          const b = L.latLngBounds(grp.items.map((f) => [f.geometry.coordinates[1], f.geometry.coordinates[0]] as [number, number]));
+          if (list) return openSpot(spot);
           m.fitBounds(b, { padding: [60, 60], maxZoom: Math.max(z + 3, 14), animate: !reduced() });
         });
         mk.addTo(g);
@@ -270,21 +338,20 @@ export default function MapView(props: MapViewProps) {
         fillColor: d.alerting ? C.red : C.amber,
         fillOpacity: 1,
       });
-      mk.bindPopup(() => popupHtml(f, latest.current, names[d.river] ?? d.river), { maxWidth: 280, minWidth: 220, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) });
+      mk.bindPopup(() => popupHtml(f, latest.current, names[d.river] ?? d.river), { ...POP, maxWidth: 280, minWidth: 220 });
       mk.on("click", () => latest.current.onSelect(d.id));
       mk.addTo(g);
       markers.current.set(d.id, mk);
     }
-    if (newest && !p.saveData) {
-      const [lon, lat] = newest.geometry.coordinates;
-      L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<span class="pulse"></span>', iconSize: [44, 44] }), interactive: false, keyboard: false })
-        .setZIndexOffset(-100)
-        .addTo(g);
-    }
+    if (!p.saveData)
+      for (const ll of pulses.values())
+        L.marker(ll, { icon: L.divIcon({ className: "", html: '<span class="pulse"></span>', iconSize: [56, 56] }), interactive: false, keyboard: false })
+          .setZIndexOffset(-100)
+          .addTo(g);
     const want = pendingPopup.current;
-    if (want != null && markers.current.has(want)) {
+    if (want != null && (markers.current.has(want) || spots.current.has(want))) {
       pendingPopup.current = null;
-      markers.current.get(want)!.openPopup();
+      openFor(want);
     }
   };
 
@@ -315,6 +382,19 @@ export default function MapView(props: MapViewProps) {
     onZoom();
     // Popup links to our own pages stay inside the SPA.
     const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      const sp = spotPopup.current;
+      const det = t.closest?.("[data-det]") as HTMLElement | null;
+      if (det && sp) {
+        const id = Number(det.dataset.det);
+        sp.popup.setContent(detailHtml(sp.spot, id));
+        latest.current.onSelect(id);
+        return;
+      }
+      if (t.closest?.("[data-back]") && sp) {
+        sp.popup.setContent(spotHtml(sp.spot, riverNames()));
+        return;
+      }
       const a = (e.target as HTMLElement).closest?.("a[data-spa]") as HTMLAnchorElement | null;
       if (!a || e.metaKey || e.ctrlKey) return;
       e.preventDefault();
@@ -453,6 +533,7 @@ export default function MapView(props: MapViewProps) {
     if (!m || !c) return;
     const animate = !reduced();
     if (c.kind === "fit") return void fitAmazonia(animate);
+    if (c.kind === "bounds") return void m.fitBounds(c.bounds, { padding: [60, 60], maxZoom: 12, animate });
     if (c.kind === "point") {
       const z = Math.max(m.getZoom(), c.zoom);
       return void (animate ? m.flyTo([c.lat, c.lon], z, { duration: 0.8 }) : m.setView([c.lat, c.lon], z));
@@ -464,11 +545,7 @@ export default function MapView(props: MapViewProps) {
     m.closePopup();
     pendingPopup.current = c.id;
     const open = () => {
-      const mk = markers.current.get(c.id);
-      if (mk) {
-        pendingPopup.current = null;
-        mk.openPopup();
-      }
+      if (openFor(c.id)) pendingPopup.current = null;
     };
     if (animate) {
       m.once("moveend", open);

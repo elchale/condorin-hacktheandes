@@ -1,4 +1,4 @@
-import { PERIODS, type Period } from "../config";
+import type { Period } from "../config";
 import { fmtAgo, fmtNum } from "../lib/format";
 import type { Totals } from "../types";
 
@@ -15,7 +15,7 @@ export function Headline({ period }: { period: Period }) {
 }
 
 /** At most three numbers, with plain labels. */
-export function Kpis({ detections, alertsSent, ha }: { detections: number; alertsSent: number; ha: number }) {
+export function Kpis({ detections, alertsSent, ha, onDetections }: { detections: number; alertsSent: number; ha: number; onDetections?: () => void }) {
   const tiles = [
     { label: "Dragas detectadas", value: detections, tone: "text-rojo" },
     { label: "Alertas enviadas por WhatsApp", value: alertsSent, tone: "text-ink" },
@@ -23,8 +23,25 @@ export function Kpis({ detections, alertsSent, ha }: { detections: number; alert
   ];
   return (
     <dl className="grid grid-cols-3 gap-2 px-4">
-      {tiles.map((t) => (
-        <div key={t.label} className="flex min-w-0 flex-col-reverse justify-end rounded-2xl bg-panel-2 px-2.5 py-2">
+      {tiles.map((t, i) => (
+        <div
+          key={t.label}
+          {...(i === 0 && onDetections
+            ? {
+                role: "button",
+                tabIndex: 0,
+                title: "Ver en el mapa",
+                onClick: onDetections,
+                onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onDetections();
+                  }
+                },
+              }
+            : {})}
+          className={`flex min-w-0 flex-col-reverse justify-end rounded-2xl bg-panel-2 px-2.5 py-2 ${i === 0 && onDetections ? "cursor-pointer hover:bg-zinc-200/70" : ""}`}
+        >
           <dt className="mt-1 text-[11px] font-medium leading-tight text-muted">{t.label}</dt>
           <dd className={`tnum text-xl font-extrabold leading-none tracking-tight ${t.tone}`}>{fmtNum(t.value)}</dd>
         </div>
@@ -34,12 +51,12 @@ export function Kpis({ detections, alertsSent, ha }: { detections: number; alert
 }
 
 /** The single time control: a labelled segmented control. */
-export function PeriodSelector({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+export function PeriodSelector({ periods, value, onChange }: { periods: Period[]; value: string; onChange: (id: string) => void }) {
   return (
     <fieldset className="px-4">
       <legend className="label-caps mb-1.5">Periodo</legend>
-      <div className="grid grid-cols-4 rounded-xl bg-panel-2 p-1" role="radiogroup" aria-label="Periodo">
-        {PERIODS.map((p) => {
+      <div className="grid rounded-xl bg-panel-2 p-1" style={{ gridTemplateColumns: `repeat(${periods.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label="Periodo">
+        {periods.map((p) => {
           const on = p.id === value;
           return (
             <button

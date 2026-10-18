@@ -8,6 +8,7 @@ export type Basemap = "sat" | "calles";
 export type MapCommand =
   | { kind: "detection"; id: number; n: number }
   | { kind: "point"; lat: number; lon: number; zoom: number; n: number }
+  | { kind: "bounds"; bounds: [[number, number], [number, number]]; n: number }
   | { kind: "fit"; n: number };
 
 export type ActiveLayer = { meta: LayerMeta; data: GeoJSON.GeoJsonObject };

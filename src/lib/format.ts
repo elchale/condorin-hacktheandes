@@ -10,6 +10,12 @@ const num = new Intl.NumberFormat(LOCALE);
 export const fmtLongDate = (iso: string) => longDate.format(new Date(iso));
 export const fmtShortDate = (iso: string) => shortDate.format(new Date(iso)).replace(".", "");
 export const fmtTime = (iso: string) => time.format(new Date(iso));
+const shortYear = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short", year: "numeric", timeZone: TZ });
+/** "31 jul 2025": the list mixes years, so every row says which one. */
+export const fmtDayYear = (iso: string) => shortYear.format(new Date(iso)).replace(/\./g, "").replace(/ de /g, " ");
+const dayKey = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: TZ });
+/** Calendar day in Lima, "2026-10-18". */
+export const limaDay = (iso: string | number) => dayKey.format(new Date(iso));
 export const fmtNum = (n: number) => num.format(n);
 export const fmtPct = (x: number) => `${Math.round(x * 100)}%`;
 

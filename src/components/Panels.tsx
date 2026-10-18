@@ -1,5 +1,5 @@
 import { BRAND_NAME } from "../config";
-import { fmtAgo, fmtNum, fmtPct, fmtShortDate, fmtTime } from "../lib/format";
+import { fmtAgo, fmtDayYear, fmtNum, fmtPct, fmtShortDate, fmtTime } from "../lib/format";
 import type { ActivityItem, DetectionFeature, LayerMeta } from "../types";
 import { DEFAULT_LAYERS, layerMinZoom, type ResolvedRiver } from "../map/types";
 import { radarLine, rainLine, slugKey, type Fuentes, type RiverSatellite, type RiverWeather } from "../lib/fuentes";
@@ -64,7 +64,7 @@ export function DetectionList(props: {
                       <span className={`truncate text-sm font-semibold ${mine.has(d.river) ? "text-cian" : ""}`}>
                         Río {names[d.river] ?? d.river}
                       </span>
-                      <span className="tnum shrink-0 text-xs text-muted">{fmtShortDate(d.captured_at)}</span>
+                      <span className="tnum shrink-0 text-xs text-muted">{fmtDayYear(d.captured_at)}</span>
                     </span>
                     <span className="mt-1.5 flex items-center gap-2">
                       <span className="h-1 flex-1 overflow-hidden rounded bg-line" aria-hidden>
@@ -125,7 +125,7 @@ export function RiverList({
               </span>
               <span>
                 <span className="label-caps block">Última</span>
-                {r.last_captured_at ? fmtShortDate(r.last_captured_at) : "Ninguna"}
+                {r.last_captured_at ? fmtDayYear(r.last_captured_at) : "Ninguna"}
               </span>
             </span>
             {feeds && <FeedLines sat={feeds.satellite[slugKey(r.slug)]} wx={feeds.weather[slugKey(r.slug)]} />}

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { DEFAULT_PERIOD, FOOTPRINT_HA, PERIODS, RIVER_FALLBACK } from "../config";
+import { buildPeriods, DEFAULT_PERIOD, FOOTPRINT_HA, RIVER_FALLBACK } from "../config";
 import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
 import { useFuentes } from "../lib/fuentes";
 import { fmtNum } from "../lib/format";
@@ -37,6 +37,8 @@ function resolveRivers(data: Mapa): ResolvedRiver[] {
     }
     if (lat != null && lon != null) out.push({ ...r, lat, lon });
   }
+  // Rivers with detections first (the one being watched right now on top).
+  out.sort((a, b) => b.detections - a.detections || a.name.localeCompare(b.name));
   return out;
 }
 
@@ -63,7 +65,6 @@ export function Dashboard() {
   const [welcome, setWelcome] = useState(() => search.get("bienvenida") === "1");
   const [zoom, setZoom] = useState(0);
   const [periodId, setPeriodId] = useState(DEFAULT_PERIOD);
-  const period = PERIODS.find((p) => p.id === periodId) ?? PERIODS[PERIODS.length - 1];
   const [legendOpen, setLegendOpen] = useState(false);
   const [tilesLoading, setTilesLoading] = useState(false);
 
@@ -73,6 +74,8 @@ export function Dashboard() {
   const images = useMemo(() => Object.fromEntries(data.images.map((i) => [i.id, i])) as Record<number, SceneImage>, [data]);
   const mineList = useMemo(() => (session ? data.mine?.ong.rivers ?? [] : []), [data, session]);
   const mine = useMemo(() => new Set(mineList), [mineList]);
+  const periods = useMemo(() => buildPeriods(data.detections.features.map((f) => Number(f.properties.captured_at.slice(0, 4)))), [data]);
+  const period = periods.find((p) => p.id === periodId) ?? periods[periods.length - 1];
   const sorted = useMemo(
     () => [...data.detections.features].sort((a, b) => b.properties.captured_at.localeCompare(a.properties.captured_at)),
     [data],
@@ -317,6 +320,16 @@ export function Dashboard() {
     if (!desktop) setSnap(0);
   };
 
+  // The KPI zooms to the detections in the period (the map opens on the whole Amazon).
+  const showDetections = () => {
+    if (!visible.length) return;
+    wantMap();
+    const lats = visible.map((f) => f.geometry.coordinates[1]);
+    const lons = visible.map((f) => f.geometry.coordinates[0]);
+    setCommand({ kind: "bounds", bounds: [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], n: ++n.current });
+    if (!desktop) setSnap(0);
+  };
+
   const toggleSave = () => {
     const next = !saveData;
     setSaveData(next);
@@ -440,9 +453,9 @@ export function Dashboard() {
           <div ref={peekBox} className="shrink-0 space-y-3 lg:pt-5">
             <div className="touch-none space-y-3 lg:touch-auto" {...dragProps}>
               <Headline period={period} />
-              <Kpis detections={inTime.length} alertsSent={data.totals.alerts_sent} ha={ha} />
+              <Kpis detections={inTime.length} alertsSent={data.totals.alerts_sent} ha={ha} onDetections={showDetections} />
             </div>
-            <PeriodSelector value={periodId} onChange={setPeriodId} />
+            <PeriodSelector periods={periods} value={period.id} onChange={setPeriodId} />
           </div>
           <div className="hidden shrink-0 px-4 pt-4 lg:block">{legend}</div>
           <div className="h-3 shrink-0" />
