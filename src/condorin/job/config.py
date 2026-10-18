@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DETECTIONS_URL = "https://api.condorin.pe/api/v1/detections"
@@ -56,7 +56,28 @@ class JobSettings(BaseSettings):
     webhook_attempts: int = Field(4, ge=1)
     webhook_backoff_s: float = 2.0
 
+    # --- final validator: TypeSafe Jev (System One), see condorin.job.validator ---
+    # Detections at or above jev_trigger_confidence are reported only if Jev's noul >= jev_min_noul.
+    jev_enabled: bool = False  # deploy/gcp-setup.sh turns it on when the API key secret exists
+    typesafe_api_key: SecretStr | None = None  # Secret Manager; never in the repo or the logs
+    typesafe_base_url: str = "https://api.typesafe.ai"
+    jev_model: str = "jev-1.13.0"  # pinned: thresholds are tuned against one version
+    jev_trigger_confidence: float = Field(0.5, ge=0.0, le=1.0)
+    jev_min_noul: float = Field(0.7, ge=0.0, le=1.0)
+    jev_max_candidates: int = Field(20, ge=1)  # per scene, strongest first; the rest do not pass
+    jev_crop_px: int = Field(384, ge=1)  # native-resolution square around each candidate
+    jev_upscale: int = Field(2, ge=1)  # sent at jev_crop_px * jev_upscale (API: 280-1568 px)
+    jev_timeout_s: float = Field(60.0, gt=0)
+    jev_max_retries: int = Field(3, ge=0)
+
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def _jev_image_size(self) -> JobSettings:
+        side = self.jev_crop_px * self.jev_upscale
+        if not 280 <= side <= 1568:
+            raise ValueError(f"JEV_CROP_PX * JEV_UPSCALE = {side}px; TypeSafe accepts 280-1568 px")
+        return self
 
     @property
     def audience(self) -> str:

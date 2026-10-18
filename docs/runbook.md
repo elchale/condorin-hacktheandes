@@ -41,7 +41,7 @@ gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name=
 ```
 
 Each task ends with `done: N reported (M with findings), F failed, of T`, plus `failures_by_reason`,
-`duplicates`, `alerted`, `gsd_unchecked` and `report`. The execution fails (non-zero exit) when any image
+`duplicates`, `alerted`, `gsd_unchecked`, `jev_confirmed`, `jev_rejected` and `report`. The execution fails (non-zero exit) when any image
 failed.
 
 Every task also writes a report with each image it did not report and why:
@@ -62,10 +62,39 @@ Read the execution's report (above), or `failures_by_reason` in the `done:` log 
 | `rejected_qc` | check the file (truncated, too small, mostly blank, GSD mismatch); replace it if the provider can |
 | `bad_gsd_m` | fix the `gsd_m` custom metadata (metres per pixel) |
 | `not_started` | the task ran out of time: re-run the prefix (done images are skipped as duplicates) and raise the task count |
+| `jev_unavailable` with 401 | the TypeSafe key is wrong or revoked: add a new version of the `typesafe-api-key` secret (below) |
+| `jev_unavailable` (other) | TypeSafe was overloaded (`429`/`529`) or unreachable after retries: re-run the prefix |
 | `backend_401` / `backend_403` | the SA is not in the backend allowlist: `UPDATE_BACKEND=1 deploy/gcp-setup.sh` |
 | `backend_4xx` (other) | payload refused: read `jsonPayload.response` and raise it with the backend team |
 | `backend_5xx`, `backend_unreachable`, `storage` | transient: re-run the prefix |
 | `no model_card.json` at start | the Job image has no model: publish one and set `MODEL_GCS_URI` |
+
+## Jev validator
+
+Detections ≥ 0.5 are reported only when TypeSafe Jev confirms them (noul ≥ 0.7); see
+`docs/backend-contract.md`. What it rejected is in each report:
+
+```bash
+gcloud storage cat "gs://river-images/reports/<execution>/task-*.json" | jq '.jev_rejections[]'
+```
+
+Turn it on (or rotate the key) without the key touching a file or the shell history:
+
+```bash
+read -rs KEY && printf '%s' "$KEY" | gcloud secrets create typesafe-api-key --project wisecai-consultor-prod --data-file=- && unset KEY
+deploy/gcp-setup.sh      # grants the Job's SA access, sets JEV_ENABLED=true and TYPESAFE_API_KEY
+# rotation: read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add typesafe-api-key --data-file=- && unset KEY
+```
+
+Check the key and the request format against the live API before a run (one request):
+
+```bash
+TYPESAFE_API_KEY=$(gcloud secrets versions access latest --secret typesafe-api-key) \
+  .venv/bin/python scripts/check_jev.py scene.jpg --box 640 320 680 336
+```
+
+Turn it off: `gcloud run jobs update condorin-detector --region us-central1 --update-env-vars JEV_ENABLED=false`.
+To change the thresholds, set `JEV_TRIGGER_CONFIDENCE` / `JEV_MIN_NOUL` the same way.
 
 ## Large prefixes
 
