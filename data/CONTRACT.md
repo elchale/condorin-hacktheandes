@@ -74,7 +74,9 @@ Performance rules (worst phone, worst network):
 
 ## Data contract A: `GET /api/v1/mapa` (public, no auth, CORS any origin, cacheable)
 Headers: `Cache-Control: public, max-age=60, stale-while-revalidate=600`, `ETag`, gzip. Optional `Authorization: Bearer <session>`
-adds `mine`. Shape (all timestamps ISO 8601 UTC, coordinates WGS84 numbers):
+adds `mine`. Shape (all timestamps ISO 8601 UTC, coordinates WGS84 numbers; since 2026-10-18 detection, image and river
+coordinates are rounded to 3 decimals, about 110 m, so the open map never pins a dredge exactly; the member panel,
+the expediente and the WhatsApp alert keep the exact point):
 
 ```json
 {
