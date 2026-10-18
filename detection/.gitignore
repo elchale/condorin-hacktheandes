@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+*-sa.json
+credentials*.json
+
+# Data, outputs, weights (never in git)
+data/
+out/
+runs/
+truncated_images/
+model/
+models/*/
+!models/README.md
+*.pt
+*.pth
+*.onnx
+*.engine
+*.openvino/
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Agent instructions (kept locally, not published)
+CLAUDE.md
+BUILD_INSTRUCTIONS.md
+AGENTS.md
+.claude/
