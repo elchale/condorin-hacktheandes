@@ -2,6 +2,7 @@ import { BRAND_NAME } from "../config";
 import { fmtAgo, fmtNum, fmtPct, fmtShortDate, fmtTime } from "../lib/format";
 import type { ActivityItem, DetectionFeature, LayerMeta } from "../types";
 import { DEFAULT_LAYERS, layerMinZoom, type ResolvedRiver } from "../map/types";
+import { radarLine, rainLine, slugKey, type Fuentes, type RiverSatellite, type RiverWeather } from "../lib/fuentes";
 
 export type DetFilter = "todas" | "alerta" | "mias";
 
@@ -83,7 +84,17 @@ export function DetectionList(props: {
   );
 }
 
-export function RiverList({ rivers, mine, onPick }: { rivers: ResolvedRiver[]; mine: Set<string>; onPick: (r: ResolvedRiver) => void }) {
+export function RiverList({
+  rivers,
+  mine,
+  onPick,
+  feeds,
+}: {
+  rivers: ResolvedRiver[];
+  mine: Set<string>;
+  onPick: (r: ResolvedRiver) => void;
+  feeds?: Fuentes | null;
+}) {
   return (
     <ul className="space-y-2 px-3 sm:px-4">
       {rivers.map((r) => (
@@ -117,6 +128,7 @@ export function RiverList({ rivers, mine, onPick }: { rivers: ResolvedRiver[]; m
                 {r.last_captured_at ? fmtShortDate(r.last_captured_at) : "Ninguna"}
               </span>
             </span>
+            {feeds && <FeedLines sat={feeds.satellite[slugKey(r.slug)]} wx={feeds.weather[slugKey(r.slug)]} />}
           </button>
         </li>
       ))}
@@ -124,7 +136,47 @@ export function RiverList({ rivers, mine, onPick }: { rivers: ResolvedRiver[]; m
   );
 }
 
+function FeedLines({ sat, wx }: { sat?: RiverSatellite; wx?: RiverWeather }) {
+  const lines = [radarLine(sat), rainLine(wx)].filter((x): x is string => !!x);
+  if (!lines.length) return null;
+  return (
+    <span className="mt-2 block space-y-0.5 border-t border-line pt-2 text-xs text-muted">
+      {lines.map((l) => (
+        <span key={l} className="block">
+          {l}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export type LayerStatus = "loading" | "error" | "ready";
+
+/** A live layer from /api/v1/fuentes (fires, Global Forest Watch tiles) shown under "Más capas". */
+export type ExtraLayer = { id: string; title: string; sub: string; color: string; on: boolean; onToggle: () => void };
+
+function ExtraRow({ x }: { x: ExtraLayer }) {
+  return (
+    <li>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={x.on}
+        onClick={x.onToggle}
+        className="flex w-full items-start gap-3 rounded-2xl bg-panel-2 p-3 text-left hover:bg-zinc-200/70"
+      >
+        <span className="mt-1 size-3.5 shrink-0 rounded-[4px]" style={{ background: x.color }} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold">{x.title}</span>
+          <span className="mt-0.5 block text-xs text-muted">{x.sub}</span>
+        </span>
+        <span className={`relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors ${x.on ? "bg-rojo" : "bg-zinc-300"}`} aria-hidden>
+          <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform ${x.on ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+        </span>
+      </button>
+    </li>
+  );
+}
 
 /** Small amber card explaining what save data mode turns off. */
 export function SaveNote({ children }: { children: React.ReactNode }) {
@@ -175,11 +227,13 @@ export function LayersTab(props: {
   onToggle: (m: LayerMeta) => void;
   saveData: boolean;
   onToggleSave: () => void;
+  extras?: ExtraLayer[];
 }) {
-  const { metas, active, status, onToggle, saveData, onToggleSave } = props;
+  const { metas, active, status, onToggle, saveData, onToggleSave, extras = [] } = props;
   const main = metas.filter((m) => DEFAULT_LAYERS.includes(m.id));
   const more = metas.filter((m) => !DEFAULT_LAYERS.includes(m.id));
-  const moreOn = more.some((m) => active.has(m.id));
+  const moreOn = more.some((m) => active.has(m.id)) || extras.some((x) => x.on);
+  const moreCount = more.length + extras.length;
   return (
     <div className="px-4">
       {saveData && <SaveNote>Las capas se descargan solo cuando las activas.</SaveNote>}
@@ -188,10 +242,10 @@ export function LayersTab(props: {
           <LayerRow key={m.id} m={m} on={active.has(m.id)} st={status[m.id]} onToggle={onToggle} />
         ))}
       </ul>
-      {more.length > 0 && (
+      {moreCount > 0 && (
         <details className="group mt-3" open={moreOn}>
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-1 text-sm font-bold [&::-webkit-details-marker]:hidden">
-            Más capas ({more.length})
+            Más capas ({moreCount})
             <span className="text-muted transition-transform group-open:rotate-180" aria-hidden>
               ▾
             </span>
@@ -199,6 +253,9 @@ export function LayersTab(props: {
           <ul className="mt-1 space-y-2">
             {more.map((m) => (
               <LayerRow key={m.id} m={m} on={active.has(m.id)} st={status[m.id]} onToggle={onToggle} />
+            ))}
+            {extras.map((x) => (
+              <ExtraRow key={x.id} x={x} />
             ))}
           </ul>
         </details>
@@ -290,7 +347,7 @@ const BASEMAP_CREDIT =
     : "Esri, HERE, Garmin, © OpenStreetMap contributors";
 
 /** Every source the map draws on: imagery, basemaps and each open data layer in layers.json. */
-export function SourcesFooter({ layers }: { layers: LayerMeta[] }) {
+export function SourcesFooter({ layers, live = [] }: { layers: LayerMeta[]; live?: { id: string; label: string; credit: string; url?: string }[] }) {
   const link = "underline underline-offset-2 hover:text-ink";
   return (
     <footer className="mt-6 border-t border-line px-3 py-4 text-xs leading-relaxed text-muted sm:px-4">
@@ -319,6 +376,19 @@ export function SourcesFooter({ layers }: { layers: LayerMeta[] }) {
               {l.source}
             </a>
             . {l.license}
+          </li>
+        ))}
+        {live.map((l) => (
+          <li key={l.id}>
+            <span className="text-ink">{l.label}:</span>{" "}
+            {l.url ? (
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className={link}>
+                {l.credit}
+              </a>
+            ) : (
+              l.credit
+            )}
+            .
           </li>
         ))}
       </ul>

@@ -1,4 +1,5 @@
 import type { DetectionFeature, LayerMeta, River, SceneImage } from "../types";
+import type { FireCollection, TileLayerMeta } from "../lib/fuentes";
 
 /** "sat": Esri World Imagery with the Esri place labels (default, like Amazon Mining Watch). "calles": Esri light gray. */
 export type Basemap = "sat" | "calles";
@@ -32,6 +33,12 @@ export type MapViewProps = {
   onFootprintInView?: (ha: number) => void;
   /** True while base tiles are loading (drives the thin progress bar). */
   onTilesLoading?: (loading: boolean) => void;
+  /** NASA FIRMS fires to draw (null when the layer is off). */
+  fires?: FireCollection | null;
+  /** Global Forest Watch raster overlays that are on. */
+  tiles?: TileLayerMeta[];
+  /** Called once when the map exists (the dashboard then fetches the live feeds). */
+  onReady?: () => void;
 };
 
 /** The hero layer (Amazon Mining Watch footprint), on by default and filtered by the year slider. */

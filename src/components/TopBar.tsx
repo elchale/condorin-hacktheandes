@@ -53,12 +53,13 @@ export function TopBar({ back = false }: { back?: boolean }) {
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
                 aria-haspopup="menu"
-                className="flex min-h-11 max-w-28 items-center gap-1.5 rounded-full border border-line bg-panel px-2 text-sm sm:max-w-44 sm:px-3"
+                aria-label={`Cuenta de ${who}`}
+                className="flex min-h-11 min-w-0 max-w-[6.5rem] items-center gap-1.5 rounded-full border border-line bg-panel px-2 text-sm min-[400px]:max-w-32 sm:max-w-44 sm:px-3"
               >
                 <span className="grid size-6 shrink-0 place-items-center rounded-full bg-cian/15 text-xs font-bold text-cian">
                   {who.charAt(0).toUpperCase()}
                 </span>
-                <span className="hidden truncate min-[400px]:inline">{who}</span>
+                <span className="min-w-0 truncate">{who}</span>
               </button>
               {open && (
                 <div role="menu" className="absolute right-0 top-12 w-60 rounded-lg border border-line bg-panel p-3 text-sm shadow-xl">

@@ -3,8 +3,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./map.css";
 import { PANEL_URL } from "../config";
-import { escapeHtml, fmtLongDate, fmtPct } from "../lib/format";
+import { escapeHtml, fmtLongDate, fmtPct, fmtTime } from "../lib/format";
 import type { DetectionFeature } from "../types";
+import type { FireCollection } from "../lib/fuentes";
 import { AMAZONIA, ANP_ID, FOOTPRINT_ID, layerMinZoom, type ActiveLayer, type MapViewProps } from "./types";
 import { navigate } from "../router";
 
@@ -22,6 +23,8 @@ const ATTRIB = {
 };
 const C = { red: "#e11d2e", amber: "#f59e0b", yellow: "#facc15", yellowEdge: "#a16207", green: "#22c55e", white: "#ffffff" };
 const CLUSTER_PX = 30;
+const FIRE = "#f97316";
+const CONF: Record<string, string> = { h: "alta", n: "normal", l: "baja" };
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function popupHtml(f: DetectionFeature, p: MapViewProps, riverName: string): string {
@@ -54,6 +57,18 @@ function layerPopup(props: Record<string, unknown> | null, labels: Record<string
     })
     .join("");
   return `<div class="cp"><p class="cp-k cp-k-muted">${escapeHtml(title)}</p><dl>${rows}</dl></div>`;
+}
+
+function firePopup(p: FireCollection["features"][number]["properties"]): string {
+  const conf = p.confidence ? CONF[p.confidence] : undefined;
+  return `<div class="cp">
+    <p class="cp-k cp-k-amber">Incendio activo</p>
+    <p class="cp-d">${escapeHtml(fmtLongDate(p.at))}, ${escapeHtml(fmtTime(p.at))}</p>
+    <dl><dt>Sensor</dt><dd>${escapeHtml(p.sensor || "VIIRS")}</dd>${
+      Number.isFinite(p.frp) ? `<dt>Potencia</dt><dd>${escapeHtml(p.frp.toLocaleString("es-PE"))} MW</dd>` : ""
+    }${conf ? `<dt>Confianza</dt><dd>${conf}</dd>` : ""}</dl>
+    <p class="cp-d">Fuente: NASA FIRMS</p>
+  </div>`;
 }
 
 /** Bounding box center and planar weight of every polygon part, for the "in view" hectares. */
@@ -100,6 +115,8 @@ export default function MapView(props: MapViewProps) {
   const yearLayers = useRef<Map<number, L.GeoJSON>>(new Map());
   const parts = useRef<Part[]>([]);
   const pendingPopup = useRef<number | null>(null);
+  const fireLayer = useRef<L.LayerGroup | null>(null);
+  const tileOverlays = useRef<Map<string, L.TileLayer>>(new Map());
   const latest = useRef(props);
   latest.current = props;
 
@@ -284,6 +301,7 @@ export default function MapView(props: MapViewProps) {
     detLayer.current = L.layerGroup().addTo(m);
     map.current = m;
     fitAmazonia(false);
+    latest.current.onReady?.();
     const onZoom = () => {
       latest.current.onZoom?.(m.getZoom());
       syncStatic();
@@ -307,6 +325,8 @@ export default function MapView(props: MapViewProps) {
       markers.current.clear();
       staticLayers.current.clear();
       yearLayers.current.clear();
+      tileOverlays.current.clear();
+      fireLayer.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -349,6 +369,62 @@ export default function MapView(props: MapViewProps) {
         .addTo(g);
     }
   }, [props.rivers, props.mineRivers]);
+
+  // NASA FIRMS fires: small orange canvas dots sized by fire radiative power, under the detections.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    fireLayer.current?.remove();
+    fireLayer.current = null;
+    const fc = props.fires;
+    if (!fc) return;
+    const g = L.layerGroup();
+    for (const f of fc.features) {
+      const [lon, lat] = f.geometry.coordinates;
+      const frp = Number(f.properties.frp) || 0;
+      L.circleMarker([lat, lon], {
+        renderer: renderer.current!,
+        radius: 2.5 + Math.min(5, Math.sqrt(frp) / 4),
+        color: "#7c2d12",
+        weight: 0.6,
+        fillColor: FIRE,
+        fillOpacity: 0.85,
+      })
+        .bindPopup(() => firePopup(f.properties), { maxWidth: 240 })
+        .addTo(g);
+    }
+    g.addTo(m);
+    fireLayer.current = g;
+    detLayer.current?.eachLayer((x) => (x as L.Path).bringToFront?.());
+  }, [props.fires]);
+
+  // Global Forest Watch raster overlays, above the basemap and below the footprint.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const want = new Map((props.tiles ?? []).map((t) => [t.id, t]));
+    for (const [id, layer] of tileOverlays.current) {
+      if (!want.has(id)) {
+        layer.remove();
+        tileOverlays.current.delete(id);
+      }
+    }
+    for (const [id, t] of want) {
+      if (tileOverlays.current.has(id)) continue;
+      const layer = L.tileLayer(t.url, {
+        minZoom: t.min_zoom,
+        maxNativeZoom: t.max_zoom,
+        maxZoom: 18,
+        opacity: t.opacity,
+        attribution: t.attribution,
+        detectRetina: false,
+        updateWhenIdle: true,
+        keepBuffer: 1,
+        zIndex: 5,
+      }).addTo(m);
+      tileOverlays.current.set(id, layer);
+    }
+  }, [props.tiles]);
 
   useEffect(drawDetections, [props.detections, props.rivers, props.mineRivers, props.saveData]);
   useEffect(syncStatic, [props.layers]);

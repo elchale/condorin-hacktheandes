@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { DEFAULT_PERIOD, FOOTPRINT_HA, PERIODS, RIVER_FALLBACK } from "../config";
-import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, type DetFilter, type LayerStatus } from "../components/Panels";
+import { DetectionList, LayersTab, RiverList, SaveNote, SourcesFooter, type DetFilter, type ExtraLayer, type LayerStatus } from "../components/Panels";
+import { useFuentes } from "../lib/fuentes";
+import { fmtNum } from "../lib/format";
 import { Headline, Kpis, Legend, PeriodSelector, UpdatedLine } from "../components/MapPanelHeader";
 import { TopBar } from "../components/TopBar";
 import { WelcomeOverlay } from "../components/WelcomeOverlay";
@@ -17,6 +19,7 @@ const MapView = lazy(loadMap);
 type Tab = "detecciones" | "rios" | "capas";
 const LAYERS_KEY = "condorin.capas";
 const HANDLE = 24;
+const FIRE_COLOR = "#f97316";
 
 function resolveRivers(data: Mapa): ResolvedRiver[] {
   const out: ResolvedRiver[] = [];
@@ -179,8 +182,64 @@ export function Dashboard() {
     [yearHa, period],
   );
 
+  // Live feeds (fires, Global Forest Watch tiles, river radar and rain): fetched once the map is up.
+  const [mapReady, setMapReady] = useState(false);
+  const onMapReady = useCallback(() => setMapReady(true), []);
+  const feeds = useFuentes(mapReady);
+  const [firesOn, setFiresOn] = useState(false);
+  const [tilesOn, setTilesOn] = useState<Set<string>>(() => new Set());
+  const fireCount = feeds?.fires.features.length ?? 0;
+  const activeTiles = useMemo(() => (feeds?.tile_layers ?? []).filter((t) => tilesOn.has(t.id)), [feeds, tilesOn]);
+  const extras = useMemo<ExtraLayer[]>(() => {
+    if (!feeds) return [];
+    const out: ExtraLayer[] = [];
+    if (fireCount)
+      out.push({
+        id: "fires",
+        title: "Incendios (7 días, NASA FIRMS)",
+        sub: `${fmtNum(fireCount)} focos de calor detectados por satélite`,
+        color: FIRE_COLOR,
+        on: firesOn,
+        onToggle: () => {
+          wantMap();
+          setFiresOn((v) => !v);
+        },
+      });
+    for (const t of feeds.tile_layers)
+      out.push({
+        id: t.id,
+        title: t.title,
+        sub: `${t.attribution}. Se ve desde el zoom ${t.min_zoom}.`,
+        color: "#db2777",
+        on: tilesOn.has(t.id),
+        onToggle: () => {
+          wantMap();
+          setTilesOn((s) => {
+            const n = new Set(s);
+            if (n.has(t.id)) n.delete(t.id);
+            else n.add(t.id);
+            return n;
+          });
+        },
+      });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feeds, fireCount, firesOn, tilesOn]);
+  const liveCredits = useMemo(() => {
+    const out: { id: string; label: string; credit: string; url?: string }[] = [];
+    if (firesOn && feeds) out.push({ id: "fires", label: "Incendios", credit: feeds.sources.firms?.attribution || "NASA FIRMS", url: feeds.sources.firms?.url });
+    for (const t of activeTiles) out.push({ id: t.id, label: t.title, credit: t.attribution, url: "https://www.globalforestwatch.org" });
+    return out;
+  }, [firesOn, feeds, activeTiles]);
+
   // Dense layers that are on but hidden at this zoom (the map draws them from zoom 9 up).
-  const farLayers = mapWanted && zoom > 0 ? activeLayers.filter((l) => zoom < layerMinZoom(l.meta)).map((l) => l.meta.short || l.meta.title) : [];
+  const farLayers =
+    mapWanted && zoom > 0
+      ? [
+          ...activeLayers.filter((l) => zoom < layerMinZoom(l.meta)).map((l) => l.meta.short || l.meta.title),
+          ...activeTiles.filter((t) => zoom < t.min_zoom).map((t) => t.title),
+        ]
+      : [];
   const busy = tilesLoading || Object.values(layerStatus).includes("loading");
 
   // Bottom sheet (phones): three snap points driven by a CSS variable. The peek shows the handle,
@@ -193,7 +252,8 @@ export function Dashboard() {
   useLayoutEffect(() => {
     const measure = () => {
       setSheetH(sheet.current?.offsetHeight ?? 0);
-      if (peekBox.current) setPeek(HANDLE + peekBox.current.offsetHeight + 8);
+      // Collapsed, the sheet takes about a quarter of the screen (the rest shows on the half snap).
+      if (peekBox.current) setPeek(Math.min(HANDLE + peekBox.current.offsetHeight + 8, Math.max(150, Math.round(window.innerHeight * 0.25))));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -266,15 +326,18 @@ export function Dashboard() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "detecciones", label: "Detecciones" },
     { id: "rios", label: "Ríos" },
-    ...(metas.length ? [{ id: "capas" as Tab, label: "Capas" }] : []),
+    ...(metas.length || extras.length ? [{ id: "capas" as Tab, label: "Capas" }] : []),
   ];
-  const currentTab = tab === "capas" && !metas.length ? "detecciones" : tab;
+  const currentTab = tab === "capas" && !metas.length && !extras.length ? "detecciones" : tab;
   const expanded = !desktop && snap > 0;
   const legend = (
     <Legend
       footprint={activeIds.has(FOOTPRINT_ID)}
       anp={activeIds.has(ANP_ID)}
-      extra={metas.filter((m) => activeIds.has(m.id) && m.id !== FOOTPRINT_ID && m.id !== ANP_ID).map((m) => ({ id: m.id, label: m.short || m.title, color: m.color }))}
+      extra={[
+        ...metas.filter((m) => activeIds.has(m.id) && m.id !== FOOTPRINT_ID && m.id !== ANP_ID).map((m) => ({ id: m.id, label: m.short || m.title, color: m.color })),
+        ...(firesOn && fireCount ? [{ id: "fires", label: "Naranja: incendios de los últimos 7 días", color: FIRE_COLOR }] : []),
+      ]}
     />
   );
 
@@ -309,6 +372,9 @@ export function Dashboard() {
                 onSelect={setSelected}
                 onZoom={setZoom}
                 onTilesLoading={setTilesLoading}
+                fires={firesOn ? feeds?.fires ?? null : null}
+                tiles={activeTiles}
+                onReady={onMapReady}
               />
             </Suspense>
           ) : (
@@ -417,14 +483,14 @@ export function Dashboard() {
                 onPick={pickDetection}
               />
             )}
-            {currentTab === "rios" && <RiverList rivers={rivers} mine={mine} onPick={pickRiver} />}
+            {currentTab === "rios" && <RiverList rivers={rivers} mine={mine} onPick={pickRiver} feeds={feeds} />}
             {currentTab === "capas" && (
-              <LayersTab metas={metas} active={activeIds} status={layerStatus} onToggle={toggleLayer} saveData={saveData} onToggleSave={toggleSave} />
+              <LayersTab metas={metas} active={activeIds} status={layerStatus} onToggle={toggleLayer} saveData={saveData} onToggleSave={toggleSave} extras={extras} />
             )}
             <div className="mt-6 space-y-1">
               <UpdatedLine generatedAt={data.generated_at} live={live} totals={data.totals} />
             </div>
-            <SourcesFooter layers={metas} />
+            <SourcesFooter layers={metas} live={liveCredits} />
           </div>
         </aside>
       </main>
