@@ -29,6 +29,38 @@ const FIRE = "#f97316";
 const fireRadius = (frp: number, z: number) => (z < 7 ? 1.4 + Math.min(1.6, Math.sqrt(frp) / 10) : 2.5 + Math.min(5, Math.sqrt(frp) / 4));
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+type Group = { pt: L.Point; items: DetectionFeature[]; order: number };
+
+/**
+ * Greedy clustering: each dot joins the first group (in creation order) whose seed is closer than
+ * CLUSTER_PX, else it seeds a new one. Seeds are bucketed in CLUSTER_PX cells, so only the 3 by 3
+ * cells around a dot are checked (same result as scanning every group, without the quadratic cost).
+ */
+function clusterByPixel(items: DetectionFeature[], project: (f: DetectionFeature) => L.Point): Group[] {
+  const groups: Group[] = [];
+  const cells = new Map<string, Group[]>();
+  for (const f of items) {
+    const pt = project(f);
+    const cx = Math.floor(pt.x / CLUSTER_PX);
+    const cy = Math.floor(pt.y / CLUSTER_PX);
+    let near: Group | undefined;
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (const g of cells.get(`${cx + dx},${cy + dy}`) ?? [])
+          if ((!near || g.order < near.order) && g.pt.distanceTo(pt) < CLUSTER_PX) near = g;
+    if (near) near.items.push(f);
+    else {
+      const g = { pt, items: [f], order: groups.length };
+      groups.push(g);
+      const key = `${cx},${cy}`;
+      const list = cells.get(key);
+      if (list) list.push(g);
+      else cells.set(key, [g]);
+    }
+  }
+  return groups;
+}
+
 const POP = { maxWidth: 300, minWidth: 250, autoPanPaddingTopLeft: L.point(16, 124), autoPanPaddingBottomRight: L.point(16, 16) };
 
 export default function MapView(props: MapViewProps) {
@@ -197,13 +229,7 @@ export default function MapView(props: MapViewProps) {
     const names = Object.fromEntries(p.rivers.map((r) => [r.slug, r.name]));
     const mine = new Set(p.mineRivers);
     const z = m.getZoom();
-    const groups: { pt: L.Point; items: DetectionFeature[] }[] = [];
-    for (const f of p.detections) {
-      const pt = m.project([f.geometry.coordinates[1], f.geometry.coordinates[0]], z);
-      const near = groups.find((x) => x.pt.distanceTo(pt) < CLUSTER_PX);
-      if (near) near.items.push(f);
-      else groups.push({ pt, items: [f] });
-    }
+    const groups = clusterByPixel(p.detections, (f) => m.project([f.geometry.coordinates[1], f.geometry.coordinates[0]], z));
     // Only scenes captured on the window's last day (today by default) get the soft pulse ring, one per place.
     const today = p.pulseDay ?? limaDay(Date.now());
     const pulses = new Map<string, [number, number]>();
@@ -311,8 +337,10 @@ export default function MapView(props: MapViewProps) {
       e.preventDefault();
       navigate(a.getAttribute("href") || "/");
     };
-    el.current.addEventListener("click", onClick);
+    const root = el.current;
+    root.addEventListener("click", onClick);
     return () => {
+      root.removeEventListener("click", onClick);
       m.remove();
       map.current = null;
       markers.current.clear();
