@@ -111,6 +111,10 @@ curl -X POST "$URL/procesar" -H "Authorization: Bearer $(gcloud auth print-ident
 gcloud run jobs executions list --job condorin-detector --region us-central1
 ```
 
+Or from GitHub: **Actions → Procesar imágenes → Run workflow** with the prefix
+(`.github/workflows/procesar.yml`). It also runs daily at 12:00 UTC for yesterday's date in every river of
+the repo variable `RIVERS` (default `yaguas`). It needs the repo variable `TRIGGER_URL` (the trigger's URL).
+
 ## Layout
 
 ```

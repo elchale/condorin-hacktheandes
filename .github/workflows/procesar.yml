@@ -1,0 +1,71 @@
+name: Procesar imágenes
+
+# Starts the detector Job through the trigger service: POST /procesar {"prefix": ...}.
+# By hand: "Run workflow" with a prefix such as yaguas/2026-10-18 (one day) or yaguas/ (a whole river).
+# Daily: at 12:00 UTC it processes yesterday (UTC) for every river in the RIVERS repo variable
+# (comma separated, default "yaguas"); a river with no images that day is skipped.
+# GitHub signs in as github-deployer (GCP_SA_KEY) and mints an ID token for the trigger's URL
+# (repo variable TRIGGER_URL); github-deployer needs roles/run.invoker on the trigger.
+# Re-running a prefix is safe: the backend deduplicates every image by Idempotency-Key.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: "Prefijo en gs://river-images (ej. yaguas/2026-10-18)"
+        required: true
+        type: string
+
+concurrency:
+  group: procesar
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  procesar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TRIGGER_URL: ${{ vars.TRIGGER_URL }}
+    steps:
+      - name: Check configuration
+        run: |
+          [ -n "$TRIGGER_URL" ] || { echo "::error::set the repo variable TRIGGER_URL"; exit 1; }
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: id_token
+          id_token_audience: ${{ vars.TRIGGER_URL }}
+          id_token_include_email: true
+      - name: POST /procesar
+        env:
+          ID_TOKEN: ${{ steps.auth.outputs.id_token }}
+          PREFIX_INPUT: ${{ inputs.prefix }}
+          RIVERS: ${{ vars.RIVERS || 'yaguas' }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
+        run: |
+          if [ "$SCHEDULED" = true ]; then
+            day=$(date -u -d yesterday +%F)
+            prefixes=$(echo "$RIVERS" | tr ',' '\n' | sed "s|^ *||; s| *$||; /^$/d; s|$|/${day}|")
+          else
+            prefixes="$PREFIX_INPUT"
+          fi
+          failed=0
+          for prefix in $prefixes; do
+            body=$(jq -cn --arg p "$prefix" '{prefix: $p}')
+            code=$(curl -sS -o resp.json -w '%{http_code}' --retry 2 --retry-all-errors --max-time 60 \
+              -X POST "${TRIGGER_URL%/}/procesar" \
+              -H "Authorization: Bearer ${ID_TOKEN}" -H 'Content-Type: application/json' -d "$body")
+            echo "$prefix → HTTP $code: $(cat resp.json)"
+            if [ "$code" = 202 ]; then
+              echo "- \`$prefix\`: $(jq -r .execution resp.json)" >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$code" = 404 ] && [ "$SCHEDULED" = true ]; then
+              echo "- \`$prefix\`: sin imágenes" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failed=1
+            fi
+          done
+          exit $failed
