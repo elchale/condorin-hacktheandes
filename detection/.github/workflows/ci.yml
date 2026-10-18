@@ -38,9 +38,22 @@ jobs:
           python-version: "3.12"
           cache: pip
       # No torch needed: tests use the fake and stub detectors.
-      - run: pip install -e ".[job,trigger,notifier,dev]" google-cloud-tasks
+      - run: pip install -e ".[job,trigger,dev]"
       - run: pytest --tb=short -q
       - run: bash -n deploy/gcp-setup.sh && deploy/gcp-setup.sh --dry-run >/dev/null
+
+  # The Job image is built on every push and PR (without a model) so a broken Dockerfile or dependency
+  # shows up here, not at release time. The smoke test runs it once on a synthetic scene in log mode.
+  job-image:
+    name: Job image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (no model)
+        run: mkdir -p model && docker build -f docker/job.Dockerfile -t condorin-detector:ci .
+      - name: Smoke test (FAKE_MODEL=1, nothing posted)
+        run: scripts/smoke_job_image.sh condorin-detector:ci --fake
 
   # Pushes to main that pass lint and tests ship to Cloud Run, signed in as github-deployer (JSON key
   # in the GCP_SA_KEY secret). Only the images change: env vars, service account, CPU and memory stay
@@ -49,7 +62,7 @@ jobs:
   # never replaces a working one.
   deploy:
     name: Deploy to Cloud Run
-    needs: [lint, test]
+    needs: [lint, test, job-image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -80,18 +93,27 @@ jobs:
           region: ${{ env.REGION }}
           image: ${{ env.TRIGGER_IMAGE }}
 
-      - name: Fetch the model
+      - uses: actions/setup-python@v5
+        if: env.MODEL_GCS_URI != ''
+        with:
+          python-version: "3.12"
+      # Card schema, weights file and name are checked before anything is built.
+      - name: Fetch and check the model
         if: env.MODEL_GCS_URI != ''
         run: |
           mkdir -p model
           gcloud storage cp "${MODEL_GCS_URI%/}/*" model/
-          python3 -c "import json; c = json.load(open('model/model_card.json')); print('model', c['name'], c['version'])"
-          echo "MODEL_VERSION=$(python3 -c "import json; print(json.load(open('model/model_card.json'))['version'])")" >> "$GITHUB_ENV"
-      - name: Build and push the Job
+          pip install -q -e .
+          MODEL_VERSION=$(python scripts/check_model.py model)
+          echo "MODEL_VERSION=$MODEL_VERSION" >> "$GITHUB_ENV"
+      # The real model must load (classes == card.classes) and run inside the image before it ships.
+      - name: Build, smoke-test and push the Job
         if: env.MODEL_GCS_URI != ''
         run: |
           IMAGE="$REGISTRY/condorin-detector:${{ github.sha }}-model${MODEL_VERSION}"
-          docker build -f docker/job.Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
+          docker build -f docker/job.Dockerfile -t "$IMAGE" .
+          scripts/smoke_job_image.sh "$IMAGE"
+          docker push "$IMAGE"
           echo "JOB_IMAGE=$IMAGE" >> "$GITHUB_ENV"
       - uses: google-github-actions/deploy-cloudrun@v2
         if: env.MODEL_GCS_URI != ''
