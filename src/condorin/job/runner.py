@@ -1,8 +1,9 @@
 """Cloud Run Job: process every image under `gs://<INPUT_BUCKET>/<PREFIX>` and report each one.
 
 Per image: read its generation and metadata → read that exact version → QC (with the scene's GSD
-when its metadata has `gsd_m`) → detect → keep the positive class above `min_confidence` → upload one
-crop per box → POST to the backend.
+when its metadata has `gsd_m`) → detect → keep the positive class above `min_confidence` → with
+JEV_ENABLED, keep detections at or above `jev_trigger_confidence` only if TypeSafe Jev confirms them
+(condorin.job.validator) → upload one crop per box → POST to the backend.
 Every readable image is reported, also with `"detections": []` (the backend stores it as "reviewed,
 nothing found"). An image is *not* reported, and counts as failed, when posting it would be wrong:
 QC rejected it, metadata the backend requires is missing, or it has findings but no bounds to put
@@ -34,6 +35,7 @@ from condorin.core.qc import run_qc
 from condorin.io import storage
 from condorin.job.config import JobSettings
 from condorin.job.report import DeliveryError, Reporter
+from condorin.job.validator import JevValidator, ValidatorError
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +62,9 @@ class Summary:
     alerted: int = 0
     failed: int = 0
     gsd_unchecked: int = 0  # the card expects a GSD but the scene's metadata has no gsd_m
+    jev_confirmed: int = 0  # detections Jev confirmed (reported)
+    jev_rejected: int = 0  # detections Jev did not confirm (not reported; listed in the report)
+    jev_rejections: list[dict] = field(default_factory=list)
     failures: Counter = field(default_factory=Counter)
     not_reported: list[dict] = field(default_factory=list)  # {"object", "reason", "detail"}
 
@@ -69,7 +74,8 @@ class Summary:
         self.not_reported.append({"object": obj, "reason": reason, "detail": detail[:500]})
 
     def as_fields(self) -> dict:
-        d = {k: v for k, v in self.__dict__.items() if k not in ("failures", "not_reported")}
+        lists = ("failures", "not_reported", "jev_rejections")
+        d = {k: v for k, v in self.__dict__.items() if k not in lists}
         return {**d, "failures_by_reason": dict(self.failures)}
 
 
@@ -132,13 +138,21 @@ def crop_png(image_bgr: np.ndarray, xyxy: tuple[float, ...], pad: int, min_side:
 
 class Runner:
     def __init__(
-        self, settings: JobSettings, card: ModelCard, detector: Detector, reporter: Reporter
+        self,
+        settings: JobSettings,
+        card: ModelCard,
+        detector: Detector,
+        reporter: Reporter,
+        validator: JevValidator | None = None,
     ) -> None:
         self.settings = settings
         self.card = card
         self.detector = detector
         self.reporter = reporter
+        self.validator = validator
         self.gsd_unchecked = 0
+        self.jev_confirmed = 0
+        self.jev_rejections: list[dict] = []
 
     @property
     def min_confidence(self) -> float:
@@ -186,6 +200,9 @@ class Runner:
             finally:
                 slowest = max(slowest, time.monotonic() - t0)
                 summary.gsd_unchecked = self.gsd_unchecked
+                summary.jev_confirmed = self.jev_confirmed
+                summary.jev_rejected = len(self.jev_rejections)
+                summary.jev_rejections = self.jev_rejections
             summary.processed += 1
             if n:
                 summary.with_findings += 1
@@ -197,6 +214,34 @@ class Runner:
                 "detections": n, "backend": answer,
                 "elapsed_ms": round((time.monotonic() - t0) * 1000)}})  # fmt: skip
         return summary
+
+    def confirm(self, obj: str, image_bgr: np.ndarray, found: list) -> list:
+        """With a validator: drop detections at or above jev_trigger_confidence that Jev does not
+        confirm. Weaker ones (which the backend stores but does not alert on) pass unchanged.
+        If Jev cannot answer the scene is not reported (fail closed); a re-run retries it."""
+        trigger = self.settings.jev_trigger_confidence
+        strong = [d for d in found if d.conf >= trigger]
+        if self.validator is None or not strong:
+            return found
+        try:
+            verdicts = self.validator.validate(image_bgr, strong)
+        except ValidatorError as err:
+            raise SkipImage("jev_unavailable", str(err)) from err
+        passed = {id(v.detection) for v in verdicts if v.passed}
+        for v in verdicts:
+            if v.passed:
+                self.jev_confirmed += 1
+                continue
+            self.jev_rejections.append({
+                "object": obj, "confidence": round(float(v.detection.conf), 4), "noul": v.noul,
+                "box_xyxy": [round(x, 1) for x in v.detection.box],
+                "reason": "not_checked" if v.noul is None else "below_min_noul",
+            })  # fmt: skip
+        kept = [d for d in found if d.conf < trigger or id(d) in passed]
+        if len(kept) < len(found):
+            log.info("jev rejected detections", extra={"fields": {
+                "object": obj, "rejected": len(found) - len(kept), "kept": len(kept)}})  # fmt: skip
+        return kept
 
     def process(self, obj: str) -> tuple[dict, int]:
         """Returns (backend answer, number of detections reported)."""
@@ -236,6 +281,7 @@ class Runner:
             log.warning("too many detections, keeping the strongest",
                         extra={"image_uri": uri, "fields": {"found": len(found)}})  # fmt: skip
             found = found[:MAX_DETECTIONS]
+        found = self.confirm(obj, qc.image_bgr, found)
 
         detections = []
         for i, d in enumerate(found):
@@ -286,6 +332,7 @@ def write_report(
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "summary": summary.as_fields(),
         "not_reported": summary.not_reported,
+        "jev_rejections": summary.jev_rejections,
     }
     data = json.dumps(report, ensure_ascii=False, indent=2).encode()
     try:
@@ -350,6 +397,14 @@ def main() -> int:
         log.error(f"model not usable: {err}", extra={"model_version": card.version})
         return 2
 
+    validator = None
+    if settings.jev_enabled:
+        try:
+            validator = JevValidator(settings)
+        except ValueError as err:
+            log.error(str(err))
+            return 2
+
     index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
     count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
     objects = list_images(settings, prefix)
@@ -357,11 +412,12 @@ def main() -> int:
     log.info("starting", extra={"model_version": card.version, "fields": {
         "prefix": prefix, "bucket": settings.input_bucket, "images_total": len(objects),
         "images_this_task": len(mine), "task_index": index, "task_count": count,
-        "device": detector.device, "webhook_mode": settings.webhook_mode}})  # fmt: skip
+        "device": detector.device, "webhook_mode": settings.webhook_mode,
+        "jev": settings.jev_model if validator else None}})  # fmt: skip
 
     # The budget counts from process start, so model loading is included, like the task timeout.
     deadline = STARTED + settings.task_budget_s
-    summary = Runner(settings, card, detector, Reporter(settings)).run(mine, deadline)
+    summary = Runner(settings, card, detector, Reporter(settings), validator).run(mine, deadline)
     report = write_report(settings, card, prefix, index, count, summary)
     if summary.gsd_unchecked:
         log.warning(f"{summary.gsd_unchecked} scenes had no gsd_m metadata: GSD check skipped",

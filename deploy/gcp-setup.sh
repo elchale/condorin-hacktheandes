@@ -28,6 +28,7 @@ UPDATE_BACKEND="${UPDATE_BACKEND:-0}"
 JOB_CPU="${JOB_CPU:-4}"
 JOB_MEMORY="${JOB_MEMORY:-8Gi}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-3600s}"
+JEV_SECRET="${JEV_SECRET:-typesafe-api-key}"   # Secret Manager secret holding the TypeSafe API key
 
 SA_NAME=condorin-detector
 SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
@@ -39,7 +40,8 @@ exists() { (( DRY_RUN )) && return 1; "$@" >/dev/null 2>&1; }
 
 echo "== APIs"
 run gcloud services enable --project "$PROJECT" \
-  run.googleapis.com artifactregistry.googleapis.com iamcredentials.googleapis.com storage.googleapis.com
+  run.googleapis.com artifactregistry.googleapis.com iamcredentials.googleapis.com storage.googleapis.com \
+  secretmanager.googleapis.com
 
 echo "== service account ${SA}"
 if ! exists gcloud iam service-accounts describe "$SA" --project "$PROJECT"; then
@@ -64,15 +66,34 @@ run gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT
 # reports/<execution>/task-NNN.json before Cloud Run kills the task.
 TASK_BUDGET_S=$(( ${JOB_TIMEOUT%s} - 300 ))
 JOB_ENV="WEBHOOK_MODE=post,INPUT_BUCKET=${INPUT_BUCKET},WEBHOOK_URL=${WEBHOOK_URL},TASK_BUDGET_S=${TASK_BUDGET_S}"
+
+# Final validator (TypeSafe Jev): on only when the API key secret exists. The key is never passed to
+# this script; create the secret yourself (see the message below) and re-run.
+echo "== TypeSafe Jev key (Secret Manager: ${JEV_SECRET})"
+JEV_SECRET_REF=""
+if (( DRY_RUN )) || gcloud secrets describe "$JEV_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+  run gcloud secrets add-iam-policy-binding "$JEV_SECRET" --project "$PROJECT" \
+    --member "serviceAccount:${SA}" --role roles/secretmanager.secretAccessor
+  JOB_ENV="${JOB_ENV},JEV_ENABLED=true"
+  JEV_SECRET_REF="TYPESAFE_API_KEY=${JEV_SECRET}:latest"
+else
+  echo "secret ${JEV_SECRET} not found: the Jev validator stays off. To turn it on:"
+  echo "  read -rs KEY && printf '%s' \"\$KEY\" | gcloud secrets create ${JEV_SECRET} --project ${PROJECT} --data-file=- && unset KEY"
+  echo "  then re-run this script."
+  JOB_ENV="${JOB_ENV},JEV_ENABLED=false"
+fi
+
 echo "== Cloud Run Job ${JOB}"
 if exists gcloud run jobs describe "$JOB" --project "$PROJECT" --region "$REGION"; then
   run gcloud run jobs update "$JOB" --project "$PROJECT" --region "$REGION" \
     --service-account "$SA" --update-env-vars "$JOB_ENV" \
+    ${JEV_SECRET_REF:+--update-secrets "$JEV_SECRET_REF"} \
     --cpu "$JOB_CPU" --memory "$JOB_MEMORY" --task-timeout "$JOB_TIMEOUT"
 else
   # max-retries 0: a failed image fails the execution; re-running the prefix is safe (idempotent).
   run gcloud run jobs create "$JOB" --project "$PROJECT" --region "$REGION" \
     --image "$PLACEHOLDER_JOB_IMAGE" --service-account "$SA" --set-env-vars "$JOB_ENV" \
+    ${JEV_SECRET_REF:+--set-secrets "$JEV_SECRET_REF"} \
     --tasks 1 --max-retries 0 --task-timeout "$JOB_TIMEOUT" --cpu "$JOB_CPU" --memory "$JOB_MEMORY"
 fi
 # The trigger starts executions with a PREFIX override (run.jobs.runWithOverrides).
