@@ -35,7 +35,7 @@ def test_requires_the_secret(client, db):
 def test_alerted_event(client, post_detection, payload, ong, sent):
     post_detection(payload)
     body = feed(client)
-    assert body['threshold'] == 0.5
+    assert body['threshold'] == 0.7
     event = body['events'][0]
     assert event['decision'] == 'alerted'
     assert event['river']['name'] == 'Yaguas'
@@ -48,7 +48,7 @@ def test_alerted_event(client, post_detection, payload, ong, sent):
         'alerts': 'done', 'opened': 'pending', 'expediente': 'pending', 'filed': 'pending',
     }
     steps = {s['key']: s for s in event['steps']}
-    assert steps['detections']['detail'] == 'La única detección supera el umbral de 50% (87%).'
+    assert steps['detections']['detail'] == 'La única detección supera el umbral de 70% (87%).'
     assert steps['routing']['detail'] == 'Lo vigila 1 ONG: Amazonía Viva (2 miembros).'
     assert steps['alerts']['detail'] == '2 alertas enviadas por WhatsApp.'
     assert steps['alerts']['at']

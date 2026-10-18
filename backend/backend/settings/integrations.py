@@ -12,7 +12,7 @@ DETECTIONS_SHARED_SECRET = env('DETECTIONS_SHARED_SECRET', default='')
 DETECTIONS_OIDC_AUDIENCE = env('DETECTIONS_OIDC_AUDIENCE', default='https://api.condorin.pe/api/v1/detections')
 DETECTIONS_ALLOWED_SERVICE_ACCOUNTS = env.list('DETECTIONS_ALLOWED_SERVICE_ACCOUNTS', default=[])
 # Detections below this confidence are stored but do not alert anyone.
-ALERT_MIN_CONFIDENCE = env.float('ALERT_MIN_CONFIDENCE', default=0.5)
+ALERT_MIN_CONFIDENCE = env.float('ALERT_MIN_CONFIDENCE', default=0.7)
 # Only scenes captured within this many days alert by WhatsApp (ONG members and admins with a phone).
 # Older scenes are stored and shown on the map but alert nobody.
 # TODO(prod): while detections/limits.py HACKATHON_ALERT_WINDOW_DAYS is set it overrides this (today or yesterday).
