@@ -7,12 +7,12 @@ export const label = "block font-medium text-ink";
 export const primaryButton =
   "w-full rounded-xl bg-rojo px-6 py-4 text-base font-bold text-white transition-colors duration-200 hover:bg-rojo-2 disabled:cursor-not-allowed disabled:bg-panel-2 disabled:text-muted";
 
-export const textLink = "font-medium text-red-400 underline underline-offset-2 hover:text-red-300";
+export const textLink = "font-medium text-rojo-3 underline underline-offset-2 hover:text-rojo-3";
 
 export const card = "rounded-3xl bg-panel p-5 ring-1 ring-line sm:p-6";
 export const sectionTitle = "text-lg font-bold";
 export const hint = "mt-1 text-sm text-muted";
-export const fieldError = "mt-1 text-sm font-medium text-red-300";
+export const fieldError = "mt-1 text-sm font-medium text-rojo-3";
 export const outlineButton =
   "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-transparent px-5 py-3.5 font-bold text-ink ring-2 ring-inset ring-ink/70 hover:bg-ink hover:text-night disabled:opacity-50 sm:w-auto";
 

@@ -5,10 +5,14 @@ export type Totals = {
   detections: number;
   alerting_detections: number;
   alerts_sent: number;
+  /** Alerts whose link was opened (added 2026-10-17, absent in older payloads). */
+  alerts_opened?: number;
   expedientes: number;
   expedientes_filed: number;
   ongs: number;
   members: number;
+  /** People registered on the site (added 2026-10-17). */
+  users?: number;
   rivers: number;
 };
 

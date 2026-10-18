@@ -27,13 +27,13 @@ export function AlertSection({ incident }: { incident: Payload["incident"] }) {
       <h3 className="mt-5 font-bold">Recortes de cada detección</h3>
       <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {detections.map((d, i) => (
-          <li key={i} className="min-w-0 overflow-hidden rounded-2xl bg-night ring-1 ring-line">
+          <li key={i} className="min-w-0 overflow-hidden rounded-2xl bg-white ring-1 ring-line">
             <div className="aspect-[4/3] bg-panel-2">
               {d.crop_url ? (
                 // Signed links that expire: shown as is, never cached.
                 <img src={d.crop_url} alt={`Recorte ${i + 1} de la imagen satelital`} className="size-full object-cover" loading="lazy" />
               ) : (
-                <div className="flex size-full flex-col items-center justify-center gap-2 p-4 text-center text-white/70">
+                <div className="flex size-full flex-col items-center justify-center gap-2 p-4 text-center text-muted">
                   <Icon name="satellite" className="size-8" />
                   <span className="text-sm">La imagen de evidencia se está preparando</span>
                 </div>
@@ -71,21 +71,21 @@ export function AlertSection({ incident }: { incident: Payload["incident"] }) {
             ].map((p) => (
               <figure key={p.label} className="min-w-0 overflow-hidden rounded-2xl bg-panel-2 ring-1 ring-line">
                 <img src={p.src} alt={`Imagen satelital, ${p.label}`} className="aspect-[4/3] w-full object-cover" loading="lazy" />
-                <figcaption className="px-2 py-1.5 text-xs text-white/85">{p.label}</figcaption>
+                <figcaption className="px-2 py-1.5 text-xs text-muted">{p.label}</figcaption>
               </figure>
             ))}
           </div>
         </div>
       )}
 
-      <div className="mt-4 flex flex-col gap-2 text-sm sm:flex-row sm:gap-6">
+      <div className="mt-3 flex flex-col text-sm sm:flex-row sm:gap-6">
         {best && (
-          <a href={best.maps_url} target="_blank" rel="noopener noreferrer" className={textLink}>
+          <a href={best.maps_url} target="_blank" rel="noopener noreferrer" className={`${textLink} inline-flex min-h-11 items-center`}>
             Ver en el mapa
           </a>
         )}
         {scene.download_url && (
-          <a href={scene.download_url} className={textLink}>
+          <a href={scene.download_url} className={`${textLink} inline-flex min-h-11 items-center`}>
             Descargar imagen original
           </a>
         )}

@@ -1,6 +1,7 @@
 import type { DetectionFeature, LayerMeta, River, SceneImage } from "../types";
 
-export type Basemap = "dark" | "sat";
+/** "sat": Esri World Imagery with the Esri place labels (default, like Amazon Mining Watch). "calles": Esri light gray. */
+export type Basemap = "sat" | "calles";
 
 /** One shot instructions for the map; `n` changes on every request so the same target can be repeated. */
 export type MapCommand =
@@ -20,9 +21,31 @@ export type MapViewProps = {
   signedIn: boolean;
   basemap: Basemap;
   layers: ActiveLayer[];
+  /** The footprint layer shows these years [from, to] (inclusive), the newest year brighter. */
+  years: [number, number];
   saveData: boolean;
-  /** Pixels hidden under the bottom sheet (phones), so fits and fly targets stay visible. */
-  bottomInset: number;
   command: MapCommand | null;
   onSelect: (id: number) => void;
+  /** Reports the zoom after every change (the dashboard shows the "Acércate" hint). */
+  onZoom?: (zoom: number) => void;
+  /** Hectares of mining footprint inside the current view, up to `year`. */
+  onFootprintInView?: (ha: number) => void;
+  /** True while base tiles are loading (drives the thin progress bar). */
+  onTilesLoading?: (loading: boolean) => void;
 };
+
+/** The hero layer (Amazon Mining Watch footprint), on by default and filtered by the year slider. */
+export const FOOTPRINT_ID = "mineria-amw";
+/** Protected areas, on by default as a green outline. */
+export const ANP_ID = "anp-sernanp";
+export const DEFAULT_LAYERS = [FOOTPRINT_ID, ANP_ID];
+
+/** The Peruvian Amazon, the first view: [[south, west], [north, east]]. */
+export const AMAZONIA: [[number, number], [number, number]] = [
+  [-14.6, -78.2],
+  [-2.2, -68.6],
+];
+
+/** Dense point layers (REINFO, 21,192 points) are drawn only from this zoom up. */
+export const DENSE_MIN_ZOOM = 9;
+export const layerMinZoom = (m: LayerMeta): number => (m.geometry === "Point" && m.features > 5000 ? DENSE_MIN_ZOOM : 0);

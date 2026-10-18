@@ -51,9 +51,10 @@ const DECISIONS = [
   "Las balsas en ríos de menos de 30 m de ancho no se ven con datos gratuitos. Hoy quedan fuera.",
   "La mejora es el radar pagado (ICEYE), con imágenes en menos de un día pero con costo por escena.",
   "Las escenas de demostración son imágenes reales de Planet de 2016 y 2017 con fechas simuladas.",
+  "El detector se entrenó, y los eventos de demostración se produjeron, con imágenes de Planet y SkyFi obtenidas a través de un aliado con acceso licenciado.",
   "Entrar desde el enlace de una alerta de WhatsApp dura 7 días; después se pide el código otra vez.",
   "La API no tiene cola de tareas: cada escena se procesa en la misma solicitud que la recibe.",
-  `Este mapa existe para funcionar en los celulares más lentos y con la peor señal. La app principal en condorin.pe mantiene el panel y el flujo del expediente.`,
+  "Este sitio está hecho para funcionar en los celulares más lentos y con la peor señal: primero el texto, el mapa después.",
 ];
 
 const PHOTO_CREDITS = [

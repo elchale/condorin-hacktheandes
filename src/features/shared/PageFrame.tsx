@@ -15,9 +15,9 @@ type Props = {
 export function PageFrame({ status, back, width = "narrow", children }: Props) {
   const max = width === "wide" ? "max-w-5xl" : "max-w-2xl";
   return (
-    <div className="min-h-dvh bg-night text-ink">
+    <div className="min-h-dvh bg-panel-2 text-ink">
       <TopBar />
-      <div className="border-b border-line bg-panel">
+      <div className="border-b border-line bg-white">
         <div className={`mx-auto flex ${max} items-center justify-between gap-3 px-4`}>
           <div className="flex min-w-0 items-center gap-4 text-sm">
             <Link href="/" className="flex min-h-11 items-center font-semibold text-cian underline underline-offset-2">

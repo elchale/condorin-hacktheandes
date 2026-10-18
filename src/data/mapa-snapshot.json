@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-10-18T04:03:29Z",
+  "generated_at": "2026-10-18T04:46:29Z",
   "brand": "Ojo de Cóndor",
   "bbox": [
-    -71.6,
+    -71.2012,
     -13.2907,
     -69.6391,
-    -2.4
+    -2.5206
   ],
   "totals": {
-    "images": 2,
-    "detections": 8,
-    "alerting_detections": 7,
-    "alerts_sent": 14,
+    "images": 3,
+    "detections": 9,
+    "alerting_detections": 8,
+    "alerts_sent": 20,
     "alerts_opened": 3,
     "expedientes": 1,
     "expedientes_filed": 0,
@@ -44,12 +44,12 @@
       "province": "Putumayo",
       "district": "Yaguas",
       "protected_area": "Parque Nacional Yaguas",
-      "lat": -2.65,
-      "lon": -71.35,
+      "lat": -2.7706,
+      "lon": -70.9512,
       "ongs": 1,
-      "images": 0,
-      "detections": 0,
-      "last_captured_at": null
+      "images": 1,
+      "detections": 1,
+      "last_captured_at": "2026-10-15T10:42:00Z"
     }
   ],
   "images": [
@@ -67,6 +67,24 @@
       "alerts_sent": 14,
       "expedientes": {
         "draft": 1,
+        "ready": 0,
+        "filed": 0
+      }
+    },
+    {
+      "id": 3,
+      "river": "yaguas",
+      "satellite": "Skyfi",
+      "captured_at": "2026-10-15T10:42:00Z",
+      "model": "dredge-detector v0.3",
+      "detections": 1,
+      "alerting": 1,
+      "top_confidence": 0.87,
+      "lat": -2.7706,
+      "lon": -70.9512,
+      "alerts_sent": 6,
+      "expedientes": {
+        "draft": 0,
         "ready": 0,
         "filed": 0
       }
@@ -218,6 +236,26 @@
         "geometry": {
           "type": "Point",
           "coordinates": [
+            -70.9512,
+            -2.7706
+          ]
+        },
+        "properties": {
+          "id": 9,
+          "image": 3,
+          "river": "yaguas",
+          "confidence": 0.87,
+          "captured_at": "2026-10-15T10:42:00Z",
+          "alerting": true,
+          "satellite": "Skyfi",
+          "kind": "draga"
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
             -69.95393,
             -13.02771
           ]
@@ -263,11 +301,17 @@
     },
     {
       "month": "2026-10",
-      "images": 1,
-      "detections": 6
+      "images": 2,
+      "detections": 7
     }
   ],
   "activity": [
+    {
+      "at": "2026-10-18T04:31:24Z",
+      "kind": "alert",
+      "river": "yaguas",
+      "label": "Alerta enviada a 1 ONG del río Yaguas"
+    },
     {
       "at": "2026-10-18T03:29:21Z",
       "kind": "alert",
@@ -285,6 +329,12 @@
       "kind": "image",
       "river": "malinowski",
       "label": "Nueva escena en el río Malinowski con 6 detecciones"
+    },
+    {
+      "at": "2026-10-15T10:42:00Z",
+      "kind": "image",
+      "river": "yaguas",
+      "label": "Nueva escena en el río Yaguas con 1 detección"
     },
     {
       "at": "2026-09-02T15:20:00Z",

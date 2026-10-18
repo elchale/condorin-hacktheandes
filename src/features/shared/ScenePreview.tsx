@@ -14,12 +14,17 @@ export function ScenePreview({ scene, river }: { scene: Scene; river: string }) 
 
   return (
     <figure className="overflow-hidden rounded-2xl bg-panel-2 ring-1 ring-line">
-      <div className="relative">
+      {/* Fixed 4:3 box, so every card has the same height; the scene is fitted inside (boxes stay on target). */}
+      <div className="flex aspect-[4/3] items-center justify-center bg-zinc-200">
+      <div
+        className="relative max-h-full max-w-full"
+        style={size ? (size.w / size.h > 4 / 3 ? { width: "100%", aspectRatio: `${size.w} / ${size.h}` } : { height: "100%", aspectRatio: `${size.w} / ${size.h}` }) : { width: "100%", height: "100%" }}
+      >
         {/* Signed links that expire: shown as is, never cached. */}
         <img
           src={scene.preview_url}
           alt={`Imagen satelital completa del río ${river} con las detecciones marcadas`}
-          className="block h-auto w-full"
+          className="block size-full object-contain"
           loading="lazy"
           onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
         />
@@ -44,7 +49,8 @@ export function ScenePreview({ scene, river }: { scene: Scene; river: string }) 
             );
           })}
       </div>
-      <figcaption className="flex flex-wrap justify-between gap-x-4 gap-y-1 px-3 py-2 text-xs text-white/80">
+      </div>
+      <figcaption className="flex flex-wrap justify-between gap-x-4 gap-y-1 px-3 py-2 text-xs text-muted">
         <span>Escena completa · recuadros rojos: superan el umbral</span>
         {scene.md5_hash && <span className="font-mono">MD5 {scene.md5_hash.slice(0, 12)}…</span>}
       </figcaption>

@@ -3,16 +3,16 @@ import { Icon } from "../shared/Icon";
 import type { Incident } from "../shared/types";
 
 const STATUS_STYLE = {
-  none: "bg-rojo/10 text-red-300",
-  draft: "bg-ambar/10 text-ambar",
+  none: "bg-rojo/10 text-rojo-3",
+  draft: "bg-ambar/10 text-amber-800",
   ready: "bg-night text-ink ring-1 ring-line",
-  filed: "bg-verde/10 text-verde",
+  filed: "bg-verde/10 text-green-800",
 } as const;
 
 const primary =
   "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rojo px-5 py-3.5 font-bold text-white hover:bg-rojo-2 sm:w-auto";
 const outline =
-  "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-panel px-5 py-3.5 font-bold text-ink ring-2 ring-inset ring-ink hover:bg-panel-2 hover:text-white sm:w-auto";
+  "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-panel px-5 py-3.5 font-bold text-ink ring-2 ring-inset ring-ink hover:bg-ink hover:text-white sm:w-auto";
 
 /** What the member can do next with this incident, as one sentence and one button. */
 function nextStep(e: Incident["expediente"]) {
@@ -52,13 +52,13 @@ export function IncidentCard({ incident, onOpen, busy = false }: Props) {
           // Signed GCS links that expire: shown as is, lazily.
           <img src={crop} alt={`Recorte satelital de la detección en el río ${incident.river.name}`} className="size-full object-cover" loading="lazy" />
         ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-2 text-white/70">
+          <div className="flex size-full flex-col items-center justify-center gap-2 text-muted">
             <Icon name="satellite" className="size-8" />
             <span className="text-sm">La imagen de evidencia se está preparando</span>
           </div>
         )}
         {more.length > 0 && (
-          <span className="absolute bottom-3 right-3 rounded-full bg-panel-2/80 px-3 py-1 text-xs font-semibold text-white">
+          <span className="absolute bottom-3 right-3 rounded-full bg-ink/75 px-3 py-1 text-xs font-semibold text-white">
             {more.length === 1 ? "1 recorte más" : `${more.length} recortes más`}
           </span>
         )}
@@ -100,7 +100,7 @@ export function IncidentCard({ incident, onOpen, busy = false }: Props) {
             type="button"
             disabled={busy}
             onClick={() => onOpen(incident, "evento")}
-            className="inline-flex min-h-11 items-center justify-center px-2 py-3 font-semibold text-red-400 underline underline-offset-2 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center px-2 py-3 font-semibold text-rojo-3 underline underline-offset-2 disabled:opacity-60"
           >
             Ver evento
           </button>

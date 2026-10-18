@@ -1,3 +1,4 @@
+import { Skeleton } from "../shared/Skeleton";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
@@ -93,9 +94,9 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
       <Frame signedIn={signedIn}>
         {overlay}
         <OpenInBrowser token={token} />
-        <p className={`${card} mt-4 text-center text-muted`} role="status">
-          Abriendo el expediente…
-        </p>
+        <div className="mt-4">
+          <Skeleton kind="page" label="Abriendo el expediente" />
+        </div>
       </Frame>
     );
   }
@@ -125,7 +126,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
           <p className="rounded-2xl bg-ambar/10 p-4 text-sm">{e.updated_by} también está trabajando en este expediente.</p>
         )}
         {notice && (
-          <p role="alert" className="rounded-2xl bg-rojo/10 p-4 text-sm text-red-300">
+          <p role="alert" className="rounded-2xl bg-rojo/10 p-4 text-sm text-rojo-3">
             {notice}
           </p>
         )}
@@ -166,7 +167,7 @@ function Frame({ signedIn, saveState = "idle", children }: { signedIn: boolean; 
     <PageFrame
       back={signedIn ? { href: "/panel", label: "Mi panel" } : undefined}
       status={
-        <span aria-live="polite" className={saveState === "error" ? "font-semibold text-red-300" : "text-muted"}>
+        <span aria-live="polite" className={saveState === "error" ? "font-semibold text-rojo-3" : "text-muted"}>
           {SAVE_LABEL[saveState]}
         </span>
       }

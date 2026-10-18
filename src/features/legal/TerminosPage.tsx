@@ -11,7 +11,7 @@ export default function TerminosPage(_props: { token?: string }) {
       <LegalSection title="1. Quién presta el servicio">
         <p>
           Ojo de Cóndor es un servicio de {COMPANY.legalName}, con RUC {COMPANY.ruc} y domicilio en {COMPANY.address}. Contacto:{" "}
-          <a href={`mailto:${COMPANY.email}`} className="font-medium text-red-400 underline underline-offset-2">{COMPANY.email}</a>.
+          <a href={`mailto:${COMPANY.email}`} className="font-medium text-rojo-3 underline underline-offset-2">{COMPANY.email}</a>.
         </p>
       </LegalSection>
 
@@ -73,7 +73,7 @@ export default function TerminosPage(_props: { token?: string }) {
       <LegalSection title="9. Datos personales">
         <p>
           Tratamos tus datos según nuestra{" "}
-          <Link href="/privacidad" className="font-medium text-red-400 underline underline-offset-2">Política de privacidad</Link>.
+          <Link href="/privacidad" className="font-medium text-rojo-3 underline underline-offset-2">Política de privacidad</Link>.
         </p>
       </LegalSection>
 

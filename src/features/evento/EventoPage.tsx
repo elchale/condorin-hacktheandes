@@ -4,6 +4,7 @@ import { AlertSection } from "../shared/AlertSection";
 import { ExpedienteError, loadEvento, type Evento } from "../shared/api";
 import { Icon } from "../shared/Icon";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
+import { Skeleton } from "../shared/Skeleton";
 import { PageFrame } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
 import type { ApiError } from "../shared/types";
@@ -59,14 +60,25 @@ export default function EventoPage({ token: tokenProp }: { token?: string }) {
           <section className={`${card} text-center`}>
             <h1 className="text-xl font-black">{error.type === "link_expired" ? "Este enlace venció" : "No pudimos abrir el evento"}</h1>
             <p className="mt-2 text-muted">{error.type === "not_found" ? "Revisa que el enlace esté completo." : error.message}</p>
-            <Link href="/panel" className={`${primaryButton} mt-6 inline-block`}>
-              Ir a mis eventos
-            </Link>
+            {error.type === "link_expired" || error.type === "not_found" ? (
+              <Link href="/panel" className={`${primaryButton} mt-6 inline-block`}>
+                Ir a mis eventos
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className={`${primaryButton} mt-6`}
+                onClick={() => {
+                  setError(null);
+                  load();
+                }}
+              >
+                Intentar de nuevo
+              </button>
+            )}
           </section>
         ) : !data ? (
-          <p className={`${card} text-center text-muted`} role="status">
-            Abriendo el evento…
-          </p>
+          <Skeleton kind="page" label="Abriendo el evento" />
         ) : (
           <>
             <AlertSection incident={data.incident} />

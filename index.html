@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b1120" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Ojo de Cóndor · Mapa de minería ilegal en la Amazonía</title>
     <meta name="description" content="Mapa en vivo de dragas y minería ilegal en los ríos de la Amazonía peruana, detectadas por satélite. Alertas por WhatsApp para ONGs y comunidades." />
     <link rel="canonical" href="https://condorin.pe/" />
@@ -24,9 +24,10 @@
     <link rel="preconnect" href="https://api.condorin.pe" crossorigin />
     <link rel="preconnect" href="https://server.arcgisonline.com" />
     <style>
-      /* Critical: paint the dark console before the CSS file arrives. */
-      html,body{margin:0;background:#0b1120;color:#e2e8f0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
-      #boot{display:flex;align-items:center;gap:8px;height:56px;padding:0 12px;border-bottom:1px solid rgba(148,163,184,.18);font-weight:800;font-size:15px}
+      /* Critical: paint the white top bar before the CSS file arrives. Only margin and the boot bar
+         here; colors live in index.css (an unlayered color here would override Tailwind's base layer). */
+      html,body{margin:0}
+      #boot{display:flex;align-items:center;gap:8px;height:56px;padding:0 12px;border-bottom:1px solid #e3e3e8;background:#fff;color:#18181b;font-weight:800;font-size:15px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
     </style>
   </head>
   <body>

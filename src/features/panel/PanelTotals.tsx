@@ -2,7 +2,7 @@ import type { Panel } from "../shared/types";
 
 export function PanelTotals({ totals }: { totals: Panel["totals"] }) {
   const cards = [
-    { label: "Sin expediente", value: totals.without_expediente, tone: "text-red-400" },
+    { label: "Sin expediente", value: totals.without_expediente, tone: "text-rojo-3" },
     { label: "En borrador", value: totals.draft, tone: "text-ambar" },
     { label: "Listos para presentar", value: totals.ready, tone: "text-ink" },
     { label: "Presentados", value: totals.filed, tone: "text-verde" },

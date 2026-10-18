@@ -25,7 +25,11 @@ const STATIC: Record<string, Page> = {
 const WITH_TOKEN: Record<string, Page> = { evento: Evento, expediente: Expediente };
 
 function Fallback() {
-  return <div className="grid-bg min-h-dvh" aria-busy="true" />;
+  return (
+    <div className="grid-bg min-h-dvh" aria-busy="true">
+      <TopBar back />
+    </div>
+  );
 }
 
 function TokenRoute({ Page, token }: { Page: Page; token: string }) {

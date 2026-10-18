@@ -132,7 +132,7 @@ export function ConfirmSection({ token, expediente: e, errors, save, onMissing, 
       )}
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-rojo/10 px-4 py-3 text-sm text-red-300">
+        <p role="alert" className="mt-4 rounded-xl bg-rojo/10 px-4 py-3 text-sm text-rojo-3">
           {error}
         </p>
       )}

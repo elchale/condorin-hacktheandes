@@ -50,7 +50,7 @@ export function OpenInBrowser({ token }: { token: string }) {
 
   if (!platform) return null;
   return (
-    <div className="sticky top-16 z-20 rounded-2xl bg-panel-2 p-4 text-white shadow-xl">
+    <div className="sticky top-16 z-20 rounded-2xl bg-ink p-4 text-white shadow-xl">
       <p className="font-bold">Estás dentro de WhatsApp</p>
       <p className="mt-1 text-sm text-white/80">Ábrelo en tu navegador para que tu sesión se mantenga.</p>
       <a

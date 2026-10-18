@@ -1,99 +1,212 @@
+/* Map chrome in the light theme. The container color matches the forest tone of the imagery, so
+   tiles that are still loading never show as a black or grey hole. */
 .leaflet-container {
-  background: #0b1120;
+  background: #c9d3c3;
   font: inherit;
 }
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
-  background: #111a2e;
-  color: #e2e8f0;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+.map-root:not(.is-sat) {
+  background: #eceef1;
 }
+
+/* Popups: white cards like the panel. */
 .leaflet-popup-content-wrapper {
-  border-radius: 8px;
+  background: #fff;
+  color: #18181b;
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(24, 24, 27, 0.22);
+}
+.leaflet-popup-tip {
+  background: #fff;
+  box-shadow: none;
 }
 .leaflet-popup-content {
-  margin: 12px 14px;
+  margin: 14px 16px;
+  line-height: 1.4;
 }
 .leaflet-container a.leaflet-popup-close-button {
-  color: #94a3b8;
-  width: 32px;
-  height: 32px;
-  font-size: 20px;
-  line-height: 32px;
+  color: #52525b;
+  width: 40px;
+  height: 40px;
+  font-size: 22px;
+  line-height: 40px;
+}
+.cp {
+  min-width: 0;
 }
 .cp-k {
   margin: 0;
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #e11d2e;
+  color: #c40f20;
+}
+.cp-k-amber {
+  color: #b45309;
+}
+.cp-k-muted {
+  color: #52525b;
+  padding-right: 20px;
 }
 .cp-t {
-  margin: 2px 0 8px;
-  font-size: 15px;
-  font-weight: 700;
+  margin: 2px 24px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.cp-d {
+  margin: 2px 0 10px;
+  font-size: 13px;
+  color: #52525b;
+}
+.cp-conf {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #52525b;
+  font-variant-numeric: tabular-nums;
+}
+.cp-conf b {
+  color: #18181b;
+}
+.cp-bar {
+  height: 6px;
+  margin: 4px 0 10px;
+  border-radius: 3px;
+  background: #f3f3f6;
+  overflow: hidden;
+}
+.cp-bar i {
+  display: block;
+  height: 100%;
+  background: #e11d2e;
+  border-radius: 3px;
 }
 .cp dl {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 2px 10px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .cp dt {
-  color: #94a3b8;
+  color: #52525b;
 }
 .cp dd {
   margin: 0;
-}
-.cp a {
-  display: block;
-  padding: 10px 0;
-  color: #22d3ee;
   font-weight: 600;
-  font-size: 13px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
-.cp a.cp-panel {
+.leaflet-container .cp a.cp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 6px;
+  border-radius: 12px;
+  border: 1px solid #e3e3e8;
+  color: #18181b;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+}
+.leaflet-container .cp a.cp-btn.cp-panel {
   color: #fff;
   background: #e11d2e;
-  text-align: center;
-  text-decoration: none;
-  border-radius: 6px;
-  margin-top: 2px;
+  border-color: #e11d2e;
 }
+
+/* River labels: white on the satellite, dark on the light street map. */
 .leaflet-tooltip.rt {
   background: transparent;
   border: 0;
   box-shadow: none;
-  color: #cbd5e1;
+  color: #18181b;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-shadow: 0 1px 2px #000, 0 0 6px #0b1120;
+  text-shadow: 0 0 3px #fff, 0 0 6px #fff;
   padding: 0;
+}
+.is-sat .leaflet-tooltip.rt {
+  color: #fff;
+  text-shadow: 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.8);
 }
 .leaflet-tooltip.rt::before {
   display: none;
 }
-.leaflet-tooltip.rt-own {
-  color: #22d3ee;
+.leaflet-tooltip.rt-own,
+.is-sat .leaflet-tooltip.rt-own {
+  color: #67e8f9;
 }
+
+/* Clusters and the pulse on the newest scene. */
+.cl {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #e11d2e;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.cl-amber {
+  background: #d97706;
+}
+.pulse {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(225, 29, 46, 0.25);
+  animation: ring 2.2s ease-out infinite;
+}
+@keyframes ring {
+  from {
+    transform: scale(0.4);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .leaflet-control-attribution {
-  background: rgba(11, 17, 32, 0.75) !important;
-  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #52525b;
   font-size: 10px;
 }
 .leaflet-control-attribution a {
-  color: #cbd5e1;
+  color: #18181b;
 }
-.leaflet-bar a {
-  background: #111a2e;
-  color: #e2e8f0;
-  border-color: rgba(148, 163, 184, 0.18);
+.leaflet-bar {
+  border: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(24, 24, 27, 0.18) !important;
+}
+.leaflet-bar a,
+.leaflet-touch .leaflet-bar a {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+  background: #fff;
+  color: #18181b;
+  border-color: #e3e3e8;
+  font-size: 20px;
 }

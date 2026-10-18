@@ -85,7 +85,7 @@ export default function Entrar() {
         </Link>
       </header>
       <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center">
-        <div className="w-full max-w-sm rounded-xl border border-line bg-panel p-5 sm:p-6">
+        <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(24,24,27,.08)] ring-1 ring-line sm:p-7">
           <p className="label-caps">Acceso para miembros</p>
           <h1 className="mt-1 text-2xl font-black tracking-tight">Entrar a {BRAND_NAME}</h1>
           <p className="mt-2 text-sm text-muted">
@@ -95,7 +95,7 @@ export default function Entrar() {
           </p>
 
           {error && (
-            <p role="alert" className="mt-4 rounded-lg border border-rojo/50 bg-rojo/10 px-3 py-2 text-sm text-red-200">
+            <p role="alert" className="mt-4 rounded-lg border border-rojo/50 bg-rojo/10 px-3 py-2 text-sm text-rojo-3">
               {error}
             </p>
           )}

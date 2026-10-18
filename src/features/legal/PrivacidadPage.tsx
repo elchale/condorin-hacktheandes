@@ -3,7 +3,7 @@ import { COMPANY } from "./company";
 
 
 const Email = () => (
-  <a href={`mailto:${COMPANY.email}`} className="font-medium text-red-400 underline underline-offset-2">
+  <a href={`mailto:${COMPANY.email}`} className="font-medium text-rojo-3 underline underline-offset-2">
     {COMPANY.email}
   </a>
 );

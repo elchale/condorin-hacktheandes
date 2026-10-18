@@ -6,7 +6,8 @@ import { navigate, useLocation } from "../../router";
 import { ExpedienteError, expedienteToken, loadMe } from "../shared/api";
 import { PageFrame } from "../shared/PageFrame";
 import type { ApiError, Incident, Panel } from "../shared/types";
-import { card } from "../shared/ui";
+import { Skeleton } from "../shared/Skeleton";
+import { card, primaryButton } from "../shared/ui";
 import { IncidentCard } from "./IncidentCard";
 import { PanelTotals } from "./PanelTotals";
 
@@ -22,6 +23,11 @@ export default function PanelPage(_props: { token?: string }) {
   const [busy, setBusy] = useState(false);
   const [welcome, setWelcome] = useState(search.get("bienvenida") === "1");
   const sessionToken = session?.token ?? null;
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  };
 
   useEffect(() => {
     if (!sessionToken) {
@@ -42,7 +48,7 @@ export default function PanelPage(_props: { token?: string }) {
     return () => {
       alive = false;
     };
-  }, [sessionToken]);
+  }, [sessionToken, attempt]);
 
   const open = useCallback(
     async (incident: Incident, to: "expediente" | "evento") => {
@@ -65,9 +71,13 @@ export default function PanelPage(_props: { token?: string }) {
   if (error) {
     return (
       <PageFrame width="wide">
-        <p role="alert" className="rounded-2xl bg-rojo/10 p-5 text-red-300">
-          {error.message}
-        </p>
+        <section role="alert" className={`${card} text-center`}>
+          <h1 className="text-xl font-black">No pudimos abrir tu panel</h1>
+          <p className="mt-2 text-muted">{error.message}</p>
+          <button type="button" onClick={retry} className={`${primaryButton} mt-6`}>
+            Intentar de nuevo
+          </button>
+        </section>
       </PageFrame>
     );
   }
@@ -75,9 +85,7 @@ export default function PanelPage(_props: { token?: string }) {
   if (!data) {
     return (
       <PageFrame width="wide">
-        <p className={`${card} text-center text-muted`} role="status">
-          Cargando tu panel…
-        </p>
+        <Skeleton kind="panel" label="Cargando tu panel" />
       </PageFrame>
     );
   }
@@ -113,7 +121,7 @@ export default function PanelPage(_props: { token?: string }) {
         </p>
       )}
       {openError && (
-        <p role="alert" className="mt-6 rounded-2xl bg-rojo/10 p-4 text-sm text-red-300">
+        <p role="alert" className="mt-6 rounded-2xl bg-rojo/10 p-4 text-sm text-rojo-3">
           No pudimos abrir ese expediente. Inténtalo otra vez.
         </p>
       )}
