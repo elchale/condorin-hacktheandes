@@ -51,7 +51,10 @@ packages = ["src/condorin"]
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
-filterwarnings = ["ignore::DeprecationWarning:google.*"]
+filterwarnings = [
+    "ignore::DeprecationWarning:google.*",
+    "ignore:Using `httpx` with `starlette.testclient`",
+]
 
 [tool.ruff]
 line-length = 100
