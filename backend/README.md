@@ -80,6 +80,8 @@ six for the browser sign in (map and static SPA), and the pages.
 | GET | `/api/v1/expedientes/<token>` | ONG member | Opens (and on first tap creates) the expediente, with everything the page needs. `?formato=pdf` returns the PDF. |
 | PATCH | `/api/v1/expedientes/<token>` | ONG member | Any subset of the fields (autosave), `authorities: [codes]`, `filings: [{authority, receipt_number, filed_at}]` (only with `Authorization: Bearer <session>` opened with a WhatsApp code by that same member, else 403 `code_session_required`), `reopen: true`. |
 | POST | `/api/v1/expedientes/<token>/enviar` | ONG member | `{}` checks completeness and sends the code (202). `{"code": "123456"}` finalizes and emails (200). |
+| GET, POST | `/api/v1/expedientes/<token>/notas` | that member, code session | The member's own field notes for this river (Atomic Memory, optional). `GET` answers `{"enabled": false}` when off. `POST {"text"}` saves one (at most 500 characters, refused when longer). |
+| PATCH, DELETE | `/api/v1/expedientes/<token>/notas/<id>` | that member, code session | `PATCH {"text"}` replaces a note (`previous_deleted` says whether the old one is gone); `DELETE` removes it. |
 | GET | `/api/v1/panel` | condorin.pe server | `Authorization: Bearer <PANEL_API_SECRET>`, `X-Condorin-Phone`. The member, their ONG and its incidents with the next action. Joins the default ONG on first call (demo only) with `DEFAULT_ONG_JOIN_ROLE` (default `member`) and sends the WhatsApp welcome, never an event. `member` carries `role` (`member` or `observer`) and `can_act`. |
 | POST | `/api/v1/panel/incidentes/<id>/expediente` | condorin.pe server | Same headers. The member's personal expediente token for that incident, created if they had no alert. |
 | POST | `/api/v1/panel/enlace` | condorin.pe server | `{"token"}` → the member a WhatsApp alert link may sign in (sent, under `LINK_SIGN_IN_DAYS`), else 404. |
@@ -207,6 +209,17 @@ The hechos of a new expediente are written by `expedientes/drafting.py` from the
 expediente is committed, on a thread (`expedientes.services.improve_later`), so no transaction waits on Claude. The
 expediente is stored and shown with the deterministic draft first; the rewrite replaces it only while nobody edited
 the hechos. The flag is off by default; if the call fails, the deterministic draft is kept.
+
+Field notes ("Mis notas de campo") are optional and off by default. With `ATOMIC_MEMORY_ENABLED=True` and an
+`ATOMIC_MEMORY_API_KEY`, `expedientes/notas.py` keeps short notes a member chose to save in Atomic Memory, one memory
+subject per member row (`ATOMIC_MEMORY_SUBJECT_PREFIX:member:<id>`, no phone or name), and offers them again beside the
+form on their next expediente. They are reference for that person only: they never change a detection, an alert, the
+hechos or the evidence, and reach the denuncia only when the member copies one into the observaciones. Reading or
+writing them needs a WhatsApp code session of that member (a forwarded link is not enough). The key stays on the
+server; the base URL must be https (plain http only to a loopback host), redirects are not followed, answers are
+read up to 256 KiB within `ATOMIC_MEMORY_TIMEOUT` (clamped to 0.1 to 10 s), and a save or a delete only counts when
+Atomic Memory confirms it. Any failure leaves the expediente working. The tests run against a local fixture
+(`expedientes/tests/atomic_memory_fixture.py`), not the real service.
 
 ## Shared database
 
