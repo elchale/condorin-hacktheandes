@@ -15,6 +15,7 @@ import { ConfirmSection } from "./ConfirmSection";
 import { DenuncianteSection } from "./DenuncianteSection";
 import { FilingSection } from "./FilingSection";
 import { HechosSection } from "./HechosSection";
+import { NotasSection } from "./NotasSection";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -149,6 +150,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
           <>
             <DenuncianteSection expediente={e} errors={errors} onSave={saveField} />
             <HechosSection expediente={e} errors={errors} onSave={saveField} />
+            <NotasSection key={`${token}:${signedIn}`} token={token} expediente={e} save={save} signedIn={signedIn} />
             <AuthoritiesSection authorities={authorities} expediente={e} errors={errors} save={save} />
             <ConfirmSection
               token={token}
