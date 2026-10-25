@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from core import clock
 from core.geo import coord, maps_url, utm
 from detections.text import fecha_larga
+from expedientes import notas
 from expedientes.autodraft import status_label
 from expedientes.drafting import place_sentence
 
@@ -120,6 +121,8 @@ def panel_payload(member, joined: bool, rows=None) -> dict:
                        for r in ong.rivers.all()],
             'members': ong.members.filter(active=True).count(),
         },
+        # What is switched on, so the SPA only offers what works (Atomic Memory is off unless configured).
+        'features': {'antecedentes': notas.enabled()},
         'totals': incident_totals(ong),
         'incidents': incident_rows(incidents(ong) if rows is None else rows, member),
     }

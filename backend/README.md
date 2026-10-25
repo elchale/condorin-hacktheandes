@@ -82,6 +82,7 @@ six for the browser sign in (map and static SPA), and the pages.
 | POST | `/api/v1/expedientes/<token>/enviar` | ONG member | `{}` checks completeness and sends the code (202). `{"code": "123456"}` finalizes and emails (200). |
 | GET, POST | `/api/v1/expedientes/<token>/notas` | that member, code session | The member's own field notes for this river (Atomic Memory, optional). `GET` answers `{"enabled": false}` when off. `POST {"text"}` saves one (at most 500 characters, refused when longer). |
 | PATCH, DELETE | `/api/v1/expedientes/<token>/notas/<id>` | that member, code session | `PATCH {"text"}` replaces a note (`previous_deleted` says whether the old one is gone); `DELETE` removes it. |
+| GET | `/api/v1/expedientes/<token>/antecedentes` | any member of the ONG | What the ONG already decided or filed within 3 km of this incident, nearest first (at most 5), from its Atomic Memory. `{"enabled": false, "antecedentes": []}` when off; 503 `notes_unavailable` when Atomic Memory cannot answer. |
 | GET | `/api/v1/panel` | condorin.pe server | `Authorization: Bearer <PANEL_API_SECRET>`, `X-Condorin-Phone`. The member, their ONG and its incidents with the next action. Joins the default ONG on first call (demo only) with `DEFAULT_ONG_JOIN_ROLE` (default `member`) and sends the WhatsApp welcome, never an event. `member` carries `role` (`member` or `observer`) and `can_act`. |
 | POST | `/api/v1/panel/incidentes/<id>/expediente` | condorin.pe server | Same headers. The member's personal expediente token for that incident, created if they had no alert. |
 | POST / DELETE | `/api/v1/panel/incidentes/<id>/triaje` | condorin.pe server | Same headers. `{"status": "confirmed" \| "false_positive" \| "verified_field", "reason": "boat" \| "sandbar" \| "other"}` (reason required for `false_positive`) sets what the member's ONG decided about the incident, shared by all its members; DELETE puts it back to new. Members only (observers get 403). A rejected incident leaves the `draft` and `without_expediente` totals and cannot be opened (409) until restored. `manage.py export_false_positives` prints the rejected crops as hard negatives for retraining. |
@@ -97,6 +98,7 @@ six for the browser sign in (map and static SPA), and the pages.
 | POST | `/api/v1/auth/salir` | SPA | Same bearer. `{"signed_out": true}`. Ends every session of that phone on every device (bumps `session_version`); idempotent, a missing or dead session gets the same answer. |
 | POST | `/api/v1/me/incidentes/<id>/expediente` | map SPA | Same bearer. `{"token"}` like the panel route. |
 | POST / DELETE | `/api/v1/me/incidentes/<id>/triaje` | map SPA | Same bearer. Same body and rules as the panel triage route; answers `{"triage"}`. |
+| GET | `/api/v1/me/incidentes/<id>/antecedentes` | map SPA | Same bearer and the same answer as the expediente route, for an incident of the member's ONG. |
 | GET | `/`, `/healthz/` and `/readyz/` | anyone | Landing page with the logo; liveness probe (the process is up); readiness probe (`SELECT 1` on the database, 503 when it does not answer). |
 | | `/admin/` | staff | ONGs, members, rivers, authorities, detections, alerts, expedientes. `ADMIN_URL` moves it (default `admin/`). |
 
@@ -211,6 +213,14 @@ The hechos of a new expediente are written by `expedientes/drafting.py` from the
 expediente is committed, on a thread (`expedientes.services.improve_later`), so no transaction waits on Claude. The
 expediente is stored and shown with the deterministic draft first; the rewrite replaces it only while nobody edited
 the hechos. The flag is off by default; if the call fails, the deterministic draft is kept.
+
+The ONG's memory of a place (`expedientes/memoria.py`) uses the same switch and client. Each ONG is one memory subject
+(`ATOMIC_MEMORY_SUBJECT_PREFIX:ong:<id>`, no member, phone or name). After the commit, on a thread, the app writes what it
+already knows: the ONG marked an incident as a dredge, not a dredge (with the reason) or verified in the field, or filed an
+expediente (authority and receipt). When a member looks at an incident, `GET .../antecedentes` searches that subject and keeps
+what is within 3 km (the distance is decided here; Atomic Memory only ranks). A decision that was undone or changed stops
+showing. These are reference only: they never change a detection, an alert, a triage or the hechos. A failed write is logged
+and the request goes on; a failed read is a 503 the page shows, never an empty list passed off as "nothing here".
 
 Field notes ("Mis notas de campo") are optional and off by default. With `ATOMIC_MEMORY_ENABLED=True` and an
 `ATOMIC_MEMORY_API_KEY`, `expedientes/notas.py` keeps short notes a member chose to save in Atomic Memory, one memory

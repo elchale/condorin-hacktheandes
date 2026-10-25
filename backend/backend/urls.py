@@ -6,6 +6,7 @@ from accounts.views import (
     CodeView,
     EnterView,
     LinkEnterView,
+    MeAntecedentesView,
     MeExpedienteView,
     MeIncidentsView,
     MeTriageView,
@@ -14,7 +15,7 @@ from accounts.views import (
 )
 from core.views import healthz, landing, readyz
 from detections.views import DetectionWebhookView
-from expedientes.views import EventoView, ExpedienteSendView, ExpedienteView, NotasView, NotaView
+from expedientes.views import AntecedentesView, EventoView, ExpedienteSendView, ExpedienteView, NotasView, NotaView
 from fuentes.views import FuentesRefreshView, FuentesView
 from mapa.views import MapaView
 from panel.views import ActivityView, LinkSignInView, PanelExpedienteView, PanelTriageView, PanelView
@@ -36,6 +37,7 @@ urlpatterns = [
     path('api/v1/eventos/<str:token>', EventoView.as_view(), name='evento'),
     path('api/v1/expedientes/<str:token>/enviar', ExpedienteSendView.as_view(), name='expediente-send'),
     # The member's own field notes (Atomic Memory, off unless ATOMIC_MEMORY_ENABLED); need a code session.
+    path('api/v1/expedientes/<str:token>/antecedentes', AntecedentesView.as_view(), name='expediente-antecedentes'),
     path('api/v1/expedientes/<str:token>/notas', NotasView.as_view(), name='expediente-notas'),
     path('api/v1/expedientes/<str:token>/notas/<str:note_id>', NotaView.as_view(), name='expediente-nota'),
 
@@ -58,5 +60,6 @@ urlpatterns = [
     path('api/v1/me', MeView.as_view(), name='me'),
     path('api/v1/me/incidentes', MeIncidentsView.as_view(), name='me-incidents'),
     path('api/v1/me/incidentes/<int:image_id>/expediente', MeExpedienteView.as_view(), name='me-expediente'),
+    path('api/v1/me/incidentes/<int:image_id>/antecedentes', MeAntecedentesView.as_view(), name='me-antecedentes'),
     path('api/v1/me/incidentes/<int:image_id>/triaje', MeTriageView.as_view(), name='me-triage'),
 ]

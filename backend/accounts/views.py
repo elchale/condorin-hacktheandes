@@ -24,7 +24,7 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -33,6 +33,7 @@ from core.exceptions import BaseError
 from core.middleware import mask_phone
 from core.throttling import PhoneThrottle, ScopedThrottle
 from expedientes.codes import MAX_ATTEMPTS, RESEND_SECONDS, CodeExpired, CodeInvalid, CodeTooSoon
+from expedientes.views import antecedentes_payload
 from panel.services import (
     clear_triage,
     incident_images,
@@ -237,3 +238,15 @@ class MeTriageView(APIView):
         member, _ = member_for_phone(require_session(request))
         clear_triage(member, image_id)
         return Response({'triage': None})
+
+
+class MeAntecedentesView(APIView):
+    """What the member's ONG already decided or filed near one incident (Atomic Memory, optional)."""
+    throttle_scope = 'me'
+
+    def get(self, request, image_id):
+        member, _ = member_for_phone(require_session(request))
+        image = incident_images(member.ong).filter(pk=image_id).first()
+        if image is None:
+            raise NotFound('No encontramos esa detección en los ríos de tu ONG.')
+        return Response(antecedentes_payload(member.ong, image))

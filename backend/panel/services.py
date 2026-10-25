@@ -10,6 +10,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from core import clock, gcs
 from core.exceptions import BaseError
 from detections.models import Alert, Detection, SatelliteImage, Triage, default_expiry
+from expedientes import memoria
 from expedientes.models import Expediente
 from expedientes.services import missing_fields, require_can_act
 from ongs.models import Member, Ong
@@ -156,6 +157,7 @@ def set_triage(member: Member, image_id: int, status: str, reason: str = '') -> 
     triage, _ = Triage.objects.update_or_create(
         image=image, ong=member.ong, defaults={'status': status, 'reason': reason, 'set_by': member},
     )
+    memoria.record_later(member.ong, image, memoria.TRIAGE_EVENT[status], memoria.triage_text(triage))
     return triage
 
 

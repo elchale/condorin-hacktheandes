@@ -4,7 +4,7 @@ import { ApiError } from "../../lib/api";
 import { useSession } from "../../lib/hooks";
 import { Link } from "../../router";
 import { AlertSection } from "../shared/AlertSection";
-import { loadExpediente, saveExpediente } from "../shared/api";
+import { loadAntecedentesByToken, loadExpediente, saveExpediente } from "../shared/api";
 import { OpenInBrowser } from "../shared/OpenInBrowser";
 import { PageFrame, PANEL_SIGN_IN } from "../shared/PageFrame";
 import { routeToken } from "../shared/routeToken";
@@ -15,6 +15,7 @@ import { ConfirmSection } from "./ConfirmSection";
 import { DenuncianteSection } from "./DenuncianteSection";
 import { FilingSection } from "./FilingSection";
 import { HechosSection } from "./HechosSection";
+import { AntecedentesList } from "../shared/AntecedentesList";
 import { NotasSection } from "./NotasSection";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -45,6 +46,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
   }, [token]);
 
   useEffect(load, [load]);
+  const loadAntecedentesForToken = useCallback(() => loadAntecedentesByToken(token), [token]);
 
   // Blurring two fields quickly sends two PATCHes; run them in order so an older answer never
   // replaces a newer one on screen (which looked like the second field had been lost).
@@ -150,6 +152,7 @@ export default function ExpedientePage({ token: tokenProp }: { token?: string })
           <>
             <DenuncianteSection expediente={e} errors={errors} onSave={saveField} />
             <HechosSection expediente={e} errors={errors} onSave={saveField} />
+            <AntecedentesList auto load={loadAntecedentesForToken} />
             <NotasSection key={`${token}:${signedIn}`} token={token} expediente={e} save={save} signedIn={signedIn} />
             <AuthoritiesSection authorities={authorities} expediente={e} errors={errors} save={save} />
             <ConfirmSection

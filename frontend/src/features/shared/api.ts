@@ -48,6 +48,24 @@ export const correctNote = (token: string, id: string, text: string) =>
   notesCall<{ note: FieldNote; previous_deleted: boolean }>(notesPath(token, id), "PATCH", { text });
 export const deleteNote = (token: string, id: string) => notesCall<{ deleted: true }>(notesPath(token, id), "DELETE");
 
+export type Antecedente = {
+  id: string;
+  event: "confirmada" | "rechazada" | "verificada" | "presentada";
+  event_label: string;
+  text: string;
+  image_id: number;
+  created_at: string;
+  distance_km: number;
+};
+export type Antecedentes = { enabled: boolean; antecedentes: Antecedente[] };
+
+/** What the member's ONG already decided or filed near one incident (the API answers `enabled: false` when off). */
+export const loadAntecedentes = (session: string, incidentId: number) =>
+  callAs<Antecedentes>(session, `/api/v1/me/incidentes/${incidentId}/antecedentes`, "GET").then((r) => r.data);
+/** The same, from an expediente link. */
+export const loadAntecedentesByToken = (token: string) =>
+  call<Antecedentes>(`${expPath(token)}/antecedentes`, "GET").then((r) => r.data);
+
 export type Evento = {
   member: { name: string; first_name: string };
   ong: { name: string };

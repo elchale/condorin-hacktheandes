@@ -8,6 +8,7 @@ POST   /api/v1/expedientes/<token>/enviar       {} sends the WhatsApp code; {"co
 GET    /api/v1/expedientes/<token>/notas        the member's field notes for this river (Atomic Memory, optional;
 POST   /api/v1/expedientes/<token>/notas        {"text"} saves one; both need a code session of that member)
 PATCH  /api/v1/expedientes/<token>/notas/<id>   {"text"} corrects one; DELETE removes it
+GET    /api/v1/expedientes/<token>/antecedentes what the ONG already decided or filed near this place
 """
 from django.http import HttpResponse
 from rest_framework import status
@@ -19,7 +20,7 @@ from accounts.session import VIA_CODE, bearer_session
 from core.exceptions import BaseError
 from core.whatsapp import WhatsAppError
 
-from . import codes, mailer, notas
+from . import codes, mailer, memoria, notas
 from .autodraft import adopt
 from .models import Expediente
 from .pdf import build_pdf
@@ -186,6 +187,27 @@ class NotaView(APIView):
         except notas.MemoryUnavailable:
             raise NotesUnavailable('No pudimos borrar la nota ahora. Sigue guardada; intenta de nuevo.') from None
         return Response({'deleted': True})
+
+
+def antecedentes_payload(ong, image) -> dict:
+    """What the ONG's memory holds about this place. Says it is off, or unreachable, instead of guessing."""
+    if not notas.enabled():
+        return {'enabled': False, 'antecedentes': []}
+    try:
+        found = memoria.recall(ong, image)
+    except notas.MemoryUnavailable:
+        raise NotesUnavailable('No pudimos consultar los antecedentes ahora. El expediente sigue igual.') from None
+    return {'enabled': True, 'antecedentes': [a.as_dict() for a in found]}
+
+
+class AntecedentesView(APIView):
+    """Earlier decisions and filings of this ONG near the incident behind a link. Any member of the ONG may read them."""
+
+    throttle_scope = 'expediente'
+
+    def get(self, request, token):
+        alert = alert_for_token(token)
+        return Response(antecedentes_payload(alert.member.ong, alert.image))
 
 
 class ExpedienteSendView(APIView):

@@ -264,3 +264,7 @@ def correct(member, note_id, text: str) -> tuple[Note, bool]:
         logger.warning('atomic memory: corrected note saved but the old one was not deleted')
         return new, False
     return new, True
+
+
+# The same guarded HTTP call, for the ONG memory (expedientes/memoria.py).
+call = _call
