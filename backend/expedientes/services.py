@@ -11,7 +11,7 @@ from core import clock, gcs
 from core.exceptions import BaseError
 from detections.models import Alert
 
-from . import mailer, redaccion
+from . import mailer, memoria, redaccion
 from .drafting import FIELD_OBSERVATIONS, draft_evidence_links, draft_facts, draft_place_reference, draft_risks
 from .models import Authority, Expediente, Filing
 
@@ -233,10 +233,11 @@ def update_expediente(expediente: Expediente, member, data: dict) -> Expediente:
         if expediente.status == Expediente.Status.DRAFT:
             raise ValidationError({'filings': ['Primero confirma el expediente para obtener el PDF final.']})
         for item in filings:
-            Filing.objects.update_or_create(
+            filing, _ = Filing.objects.update_or_create(
                 expediente=expediente, authority=item['authority'],
                 defaults={'receipt_number': item['receipt_number'], 'filed_at': item['filed_at'], 'filed_by': member},
             )
+            memoria.record_later(expediente.ong, expediente.image, 'presentada', memoria.filing_text(filing))
         expediente.status = Expediente.Status.FILED
 
     expediente.updated_by = member

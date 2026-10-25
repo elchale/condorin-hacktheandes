@@ -50,7 +50,7 @@ def test_happy_path(client, ong, sent):
     me = client.get('/api/v1/me', HTTP_AUTHORIZATION=f'Bearer {entered["token"]}')
     assert me.status_code == 200
     assert me.json()['member']['name'] == 'María Huamán Ríos'
-    assert set(me.json()) == {'clock', 'member', 'ong', 'totals', 'incidents', 'pagination'}
+    assert set(me.json()) == {'clock', 'member', 'ong', 'features', 'totals', 'incidents', 'pagination'}
 
     # The same pending value never signs in twice.
     again = post(client, '/api/v1/auth/entrar', {'pending': body['pending'], 'code': code})

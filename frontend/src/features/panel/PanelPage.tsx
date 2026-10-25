@@ -4,7 +4,7 @@ import { WelcomeOverlay } from "../../components/WelcomeOverlay";
 import { useSession } from "../../lib/hooks";
 import { clearToken } from "../../lib/session";
 import { navigate, useLocation } from "../../router";
-import { clearTriage, expedienteToken, loadIncidents, loadMe, pageOf, setTriage } from "../shared/api";
+import { clearTriage, expedienteToken, loadAntecedentes, loadIncidents, loadMe, pageOf, setTriage } from "../shared/api";
 import { PageFrame } from "../shared/PageFrame";
 import type { Incident, Panel, Triage, TriageReason, TriageStatus } from "../../types";
 import { Skeleton } from "../shared/Skeleton";
@@ -128,6 +128,10 @@ export default function PanelPage(_props: { token?: string }) {
       void decide(incident, () => setTriage(sessionToken ?? "", incident.id, status, reason)),
     [decide, sessionToken],
   );
+  const antecedentesOf = useCallback(
+    (incident: Incident) => loadAntecedentes(sessionToken ?? "", incident.id),
+    [sessionToken],
+  );
   const onClearTriage = useCallback(
     (incident: Incident) => void decide(incident, () => clearTriage(sessionToken ?? "", incident.id)),
     [decide, sessionToken],
@@ -242,6 +246,7 @@ export default function PanelPage(_props: { token?: string }) {
                   canAct={member.can_act ?? false}
                   onTriage={onTriage}
                   onClearTriage={onClearTriage}
+                  loadAntecedentes={data.features?.antecedentes ? antecedentesOf : undefined}
                 />
               </li>
             ))}

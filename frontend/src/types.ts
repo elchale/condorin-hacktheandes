@@ -263,6 +263,8 @@ export type Panel = {
   clock?: import("./lib/clock").Clock;
   member: { name: string; phone: string; joined_now: boolean; role?: "member" | "observer"; can_act?: boolean };
   ong: { name: string; rivers: { slug: string; name: string; protected_area: string }[]; members: number };
+  /** What the API has switched on; the antecedentes button only shows when it is. */
+  features?: { antecedentes?: boolean };
   totals: {
     incidents: number;
     without_expediente: number;

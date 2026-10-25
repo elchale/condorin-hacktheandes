@@ -103,3 +103,13 @@ ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY', default='')
 EXPEDIENTE_IA_MODEL = env('EXPEDIENTE_IA_MODEL', default='claude-opus-5-5')
 EXPEDIENTE_IA_MAX_TOKENS = env.int('EXPEDIENTE_IA_MAX_TOKENS', default=4000)
 EXPEDIENTE_IA_TIMEOUT = env.int('EXPEDIENTE_IA_TIMEOUT', default=40)
+
+# Notas de campo del miembro en Atomic Memory (expedientes/notas.py). Apagadas por defecto: sin bandera o sin
+# clave, la sección no aparece y el expediente funciona igual. La clave (amc_...) solo vive en el servidor.
+ATOMIC_MEMORY_ENABLED = env.bool('ATOMIC_MEMORY_ENABLED', default=False)
+ATOMIC_MEMORY_API_URL = env('ATOMIC_MEMORY_API_URL', default='https://api.atomicstrata.ai')
+ATOMIC_MEMORY_API_KEY = env('ATOMIC_MEMORY_API_KEY', default='')
+# Each member is one memory subject, `<prefix>:member:<id>`; give staging and production different prefixes.
+ATOMIC_MEMORY_SUBJECT_PREFIX = env('ATOMIC_MEMORY_SUBJECT_PREFIX', default='condorin')
+# Seconds per call; the page waits at most this long for the notes, never the expediente itself.
+ATOMIC_MEMORY_TIMEOUT = env.float('ATOMIC_MEMORY_TIMEOUT', default=3.0)

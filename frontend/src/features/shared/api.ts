@@ -2,7 +2,7 @@
 // carry only the token in the path; panel calls carry the bearer session.
 
 import { API_URL } from "../../config";
-import { request } from "../../lib/api";
+import { api, request } from "../../lib/api";
 import type { Incident, Page, Panel, Patch, Payload, Status, Triage, TriageReason, TriageStatus } from "../../types";
 
 /** Token only calls: the link token in the path is the whole auth, never the bearer session. */
@@ -32,6 +32,39 @@ export type SendResult =
 /** `{}` asks for the WhatsApp code (202); `{code}` confirms (200 with the final expediente). */
 export const sendExpediente = (token: string, code?: string) =>
   call<SendResult["data"]>(`${expPath(token)}/enviar`, "POST", code ? { code } : {}) as Promise<SendResult>;
+
+/** One of the member's own field notes (Atomic Memory). Reference for them only, never part of the denuncia. */
+export type FieldNote = { id: string; text: string; river: string; river_name: string; created_at: string };
+export type FieldNotes = { enabled: boolean; notes: FieldNote[] };
+
+/** Notes calls carry the stored bearer: the API answers only a WhatsApp code session of the link's member. */
+const notesPath = (token: string, id?: string) => `${expPath(token)}/notas${id ? `/${encodeURIComponent(id)}` : ""}`;
+const notesCall = <T>(path: string, method: string, body?: unknown) => api<T>(path, { method, body, cache: "no-store", timeout: 10000 });
+
+export const loadNotes = (token: string) => notesCall<FieldNotes>(notesPath(token), "GET");
+export const saveNote = (token: string, text: string) => notesCall<{ note: FieldNote }>(notesPath(token), "POST", { text });
+/** The corrected note replaces the old one; `previous_deleted` false means the old text is still stored. */
+export const correctNote = (token: string, id: string, text: string) =>
+  notesCall<{ note: FieldNote; previous_deleted: boolean }>(notesPath(token, id), "PATCH", { text });
+export const deleteNote = (token: string, id: string) => notesCall<{ deleted: true }>(notesPath(token, id), "DELETE");
+
+export type Antecedente = {
+  id: string;
+  event: "confirmada" | "rechazada" | "verificada" | "presentada";
+  event_label: string;
+  text: string;
+  image_id: number;
+  created_at: string;
+  distance_km: number;
+};
+export type Antecedentes = { enabled: boolean; antecedentes: Antecedente[] };
+
+/** What the member's ONG already decided or filed near one incident (the API answers `enabled: false` when off). */
+export const loadAntecedentes = (session: string, incidentId: number) =>
+  callAs<Antecedentes>(session, `/api/v1/me/incidentes/${incidentId}/antecedentes`, "GET").then((r) => r.data);
+/** The same, from an expediente link. */
+export const loadAntecedentesByToken = (token: string) =>
+  call<Antecedentes>(`${expPath(token)}/antecedentes`, "GET").then((r) => r.data);
 
 export type Evento = {
   member: { name: string; first_name: string };

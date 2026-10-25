@@ -1,4 +1,7 @@
 import { dragas } from "../shared/format";
+import { useCallback } from "react";
+import type { Antecedentes } from "../shared/api";
+import { AntecedentesList } from "../shared/AntecedentesList";
 import { Icon } from "../shared/Icon";
 import type { Incident, TriageReason, TriageStatus } from "../../types";
 import { TriageBar } from "./TriageBar";
@@ -44,10 +47,13 @@ type Props = {
   canAct?: boolean;
   onTriage?: (incident: Incident, status: TriageStatus, reason?: TriageReason) => void;
   onClearTriage?: (incident: Incident) => void;
+  /** What the ONG already decided or filed near this incident, asked for when the member taps for it. */
+  loadAntecedentes?: (incident: Incident) => Promise<Antecedentes>;
 };
 
-export function IncidentCard({ incident, onOpen, busy = false, canAct = false, onTriage, onClearTriage }: Props) {
+export function IncidentCard({ incident, onOpen, busy = false, canAct = false, onTriage, onClearTriage, loadAntecedentes }: Props) {
   const e = incident.expediente;
+  const loadHere = useCallback(() => loadAntecedentes!(incident), [loadAntecedentes, incident]);
   const step = nextStep(e);
   const triage = incident.triage;
   // The ONG said the model was wrong: no denuncia to start until they undo it (the API refuses it too).
@@ -115,6 +121,8 @@ export function IncidentCard({ incident, onOpen, busy = false, canAct = false, o
             </p>
           )
         )}
+
+        {loadAntecedentes && <AntecedentesList key={incident.id} load={loadHere} />}
 
         <p className="mt-4 text-sm">
           {rejected ? "Marcada como no es una draga. No hace falta una denuncia." : step.note}
