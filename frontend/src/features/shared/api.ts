@@ -3,7 +3,7 @@
 
 import { API_URL } from "../../config";
 import { request } from "../../lib/api";
-import type { Incident, Page, Panel, Patch, Payload, Status } from "../../types";
+import type { Incident, Page, Panel, Patch, Payload, Status, Triage, TriageReason, TriageStatus } from "../../types";
 
 /** Token only calls: the link token in the path is the whole auth, never the bearer session. */
 const call = <T>(path: string, method: string, body?: unknown) => request<T>(path, { method, body, auth: false, cache: "no-store" });
@@ -63,3 +63,11 @@ export const loadIncidents = (session: string, page: number) =>
 /** The member's personal expediente token for one incident (created if they had no alert for it). */
 export const expedienteToken = (session: string, incidentId: number) =>
   callAs<{ token: string }>(session, `/api/v1/me/incidentes/${incidentId}/expediente`, "POST", {}).then((r) => r.data);
+
+/** Records what the member's ONG decided about an incident; `reason` is required for "false_positive". */
+export const setTriage = (session: string, incidentId: number, status: TriageStatus, reason?: TriageReason) =>
+  callAs<{ triage: Triage }>(session, `/api/v1/me/incidentes/${incidentId}/triaje`, "POST", { status, reason }).then((r) => r.data.triage);
+
+/** Puts the incident back to "new" (nobody decided). Idempotent. */
+export const clearTriage = (session: string, incidentId: number) =>
+  callAs<{ triage: null }>(session, `/api/v1/me/incidentes/${incidentId}/triaje`, "DELETE").then(() => null);

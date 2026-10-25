@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Alert, Detection, SatelliteImage
+from .models import Alert, Detection, SatelliteImage, Triage
 
 
 class DetectionInline(admin.TabularInline):
@@ -33,3 +33,10 @@ class AlertAdmin(admin.ModelAdmin):
     list_filter = ['status']
     search_fields = ['member__full_name', 'member__phone']
     readonly_fields = ['image', 'member', 'token', 'wa_message_id', 'sent_at', 'opened_at', 'attempts', 'error']
+
+
+@admin.register(Triage)
+class TriageAdmin(admin.ModelAdmin):
+    list_display = ['image', 'ong', 'status', 'reason', 'set_by', 'updated']
+    list_filter = ['status', 'reason', 'ong']
+    raw_id_fields = ['image', 'set_by']

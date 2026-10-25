@@ -130,3 +130,38 @@ class Alert(BaseModel):
     @property
     def link(self):
         return f'{settings.FRONTEND_URL}/expediente/{self.token}'
+
+
+class Triage(BaseModel):
+    """What an ONG decided about one scene, shared by all its members. No row means nobody looked yet.
+
+    One per image and ONG, like the expediente. `false_positive` is the ONG saying the model was wrong
+    (`reason` says why); those crops are the hard negatives `manage.py export_false_positives` hands to the
+    next training run. Nothing is deleted: setting another status undoes a rejection.
+    """
+
+    class Status(models.TextChoices):
+        CONFIRMED = 'confirmed', 'Es una draga'
+        FALSE_POSITIVE = 'false_positive', 'No es una draga'
+        VERIFIED_FIELD = 'verified_field', 'Verificada en campo'
+
+    class Reason(models.TextChoices):
+        BOAT = 'boat', 'Bote o lancha'
+        SANDBAR = 'sandbar', 'Banco de arena o sombra'
+        OTHER = 'other', 'Otra cosa'
+
+    image = models.ForeignKey(SatelliteImage, on_delete=models.CASCADE, related_name='triages')
+    ong = models.ForeignKey('ongs.Ong', on_delete=models.CASCADE, related_name='triages')
+    status = models.CharField(max_length=16, choices=Status.choices)
+    reason = models.CharField(max_length=10, choices=Reason.choices, blank=True)
+    set_by = models.ForeignKey('ongs.Member', on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        verbose_name = 'triaje'
+        verbose_name_plural = 'triajes'
+        constraints = [
+            models.UniqueConstraint(fields=['image', 'ong'], name='triage_unique_per_image_ong'),
+        ]
+
+    def __str__(self):
+        return f'{self.ong} {self.image_id}: {self.status}'
