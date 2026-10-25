@@ -13,7 +13,7 @@ from accounts.views import (
 )
 from core.views import healthz, landing, readyz
 from detections.views import DetectionWebhookView
-from expedientes.views import EventoView, ExpedienteSendView, ExpedienteView
+from expedientes.views import EventoView, ExpedienteSendView, ExpedienteView, NotasView, NotaView
 from fuentes.views import FuentesRefreshView, FuentesView
 from mapa.views import MapaView
 from panel.views import ActivityView, LinkSignInView, PanelExpedienteView, PanelView
@@ -34,6 +34,9 @@ urlpatterns = [
     path('api/v1/expedientes/<str:token>', ExpedienteView.as_view(), name='expediente'),
     path('api/v1/eventos/<str:token>', EventoView.as_view(), name='evento'),
     path('api/v1/expedientes/<str:token>/enviar', ExpedienteSendView.as_view(), name='expediente-send'),
+    # The member's own field notes (Atomic Memory, off unless ATOMIC_MEMORY_ENABLED); need a code session.
+    path('api/v1/expedientes/<str:token>/notas', NotasView.as_view(), name='expediente-notas'),
+    path('api/v1/expedientes/<str:token>/notas/<str:note_id>', NotaView.as_view(), name='expediente-nota'),
 
     # Called only by the condorin.pe server (shared secret): the ONG panel, the WhatsApp link sign in
     # and the admin live feed.

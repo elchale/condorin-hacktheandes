@@ -5,10 +5,13 @@ GET    /api/v1/expedientes/<token>?formato=pdf  the PDF: final once confirmed, B
 PATCH  /api/v1/expedientes/<token>              autosave fields, record filings, reopen (filings also need
                                                 Authorization: Bearer <a code session of that member>)
 POST   /api/v1/expedientes/<token>/enviar       {} sends the WhatsApp code; {"code"} finalizes and emails it
+GET    /api/v1/expedientes/<token>/notas        the member's field notes for this river (Atomic Memory, optional;
+POST   /api/v1/expedientes/<token>/notas        {"text"} saves one; both need a code session of that member)
+PATCH  /api/v1/expedientes/<token>/notas/<id>   {"text"} corrects one; DELETE removes it
 """
 from django.http import HttpResponse
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,7 +19,7 @@ from accounts.session import VIA_CODE, bearer_session
 from core.exceptions import BaseError
 from core.whatsapp import WhatsAppError
 
-from . import codes, mailer
+from . import codes, mailer, notas
 from .autodraft import adopt
 from .models import Expediente
 from .pdf import build_pdf
@@ -44,6 +47,39 @@ def require_code_session(request, member) -> None:
     session = bearer_session(request)
     if session is None or session[1] != VIA_CODE or session[0] != member.phone:
         raise CodeSessionRequired()
+
+
+class NotesSessionRequired(BaseError):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = 'Tus notas de campo son personales. Entra con el código que te enviamos por WhatsApp para verlas.'
+
+
+class NotesUnavailable(BaseError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = 'No pudimos llegar a tus notas ahora. La nota no se guardó; el expediente sigue igual.'
+
+
+class NotesDisabled(BaseError):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_detail = 'Las notas de campo no están activadas.'
+
+
+def notes_member(request, alert):
+    """Whose notes these are: the member of the link, and only with their own code session, since a link can be
+    forwarded and the notes follow the person across incidents. The memory subject comes from that member row."""
+    require_can_act(alert.member)
+    session = bearer_session(request)
+    if session is None or session[1] != VIA_CODE or session[0] != alert.member.phone:
+        raise NotesSessionRequired()
+    return alert.member
+
+
+def _note_text(request) -> str:
+    """The note exactly as sent (ends trimmed): a non string, empty or too long note is a 400, never cut."""
+    try:
+        return notas.valid_text(request.data.get('text') if isinstance(request.data, dict) else None)
+    except notas.InvalidNote as exc:
+        raise ValidationError({'text': [str(exc)]}) from None
 
 
 def _open(alert):
@@ -85,6 +121,71 @@ class EventoView(APIView):
 
     def get(self, request, token):
         return Response(event_payload(alert_for_token(token)))
+
+
+class NotasView(APIView):
+    """The member's field notes beside the form. Reference for the person only: never part of the denuncia."""
+
+    throttle_scope = 'expediente'
+
+    def get(self, request, token):
+        alert = alert_for_token(token)
+        if not notas.enabled():
+            # Only says the feature is off; no note is read, so no session is needed for this answer.
+            return Response({'enabled': False, 'notes': []})
+        member = notes_member(request, alert)
+        place = (Expediente.objects.filter(image=alert.image, ong=member.ong)
+                 .values_list('place_reference', flat=True).first() or '')
+        try:
+            found = notas.relevant(member, alert.image.river, place)
+        except notas.MemoryUnavailable:
+            raise NotesUnavailable('No pudimos cargar tus notas ahora. El expediente sigue igual.') from None
+        return Response({'enabled': True, 'notes': [n.as_dict() for n in found]})
+
+    def post(self, request, token):
+        alert = alert_for_token(token)
+        if not notas.enabled():
+            raise NotesDisabled()
+        member = notes_member(request, alert)
+        text = _note_text(request)
+        expediente_id = (Expediente.objects.filter(image=alert.image, ong=member.ong)
+                         .values_list('pk', flat=True).first())
+        try:
+            note = notas.save(member, alert.image.river, text, expediente_id)
+        except notas.MemoryUnavailable:
+            raise NotesUnavailable() from None
+        return Response({'note': note.as_dict()}, status=status.HTTP_201_CREATED)
+
+
+class NotaView(APIView):
+    throttle_scope = 'expediente'
+
+    def _member(self, request, token):
+        alert = alert_for_token(token)
+        if not notas.enabled():
+            raise NotesDisabled()
+        return notes_member(request, alert)
+
+    def patch(self, request, token, note_id):
+        member = self._member(request, token)
+        text = _note_text(request)
+        try:
+            note, previous_deleted = notas.correct(member, note_id, text)
+        except notas.NoteNotFound:
+            raise NotFound('No encontramos esa nota.') from None
+        except notas.MemoryUnavailable:
+            raise NotesUnavailable('No pudimos guardar la corrección. Tu nota sigue como estaba.') from None
+        return Response({'note': note.as_dict(), 'previous_deleted': previous_deleted})
+
+    def delete(self, request, token, note_id):
+        member = self._member(request, token)
+        try:
+            notas.delete(member, note_id)
+        except notas.NoteNotFound:
+            raise NotFound('No encontramos esa nota.') from None
+        except notas.MemoryUnavailable:
+            raise NotesUnavailable('No pudimos borrar la nota ahora. Sigue guardada; intenta de nuevo.') from None
+        return Response({'deleted': True})
 
 
 class ExpedienteSendView(APIView):
