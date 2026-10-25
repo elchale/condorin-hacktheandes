@@ -1,5 +1,6 @@
 """Production's default cache is the DatabaseCache table that core 0002_cache_table creates on deploy."""
 import importlib
+from types import SimpleNamespace
 
 import pytest
 from django.conf import settings as django_settings
@@ -26,9 +27,11 @@ def test_production_settings_share_the_database_cache():
 def test_the_migration_creates_the_cache_table(settings):
     settings.CACHES = PROD_CACHES
     migration = importlib.import_module('core.migrations.0002_cache_table')
-    with connection.schema_editor() as editor:
-        migration.create_cache_table(None, editor)
-        migration.create_cache_table(None, editor)  # a second deploy finds it and does nothing
+    # The migration only reads the connection from the schema editor. A real one cannot be entered inside the
+    # test transaction on SQLite, so a stand-in keeps the test the same on every database.
+    editor = SimpleNamespace(connection=connection)
+    migration.create_cache_table(None, editor)
+    migration.create_cache_table(None, editor)  # a second deploy finds it and does nothing
     assert 'django_cache' in connection.introspection.table_names()
 
     shared = DatabaseCache('django_cache', {})

@@ -214,6 +214,20 @@ export type Patch = Partial<EditableFields> & {
 };
 
 /** The payload of GET /api/v1/me (the panel view): member, ONG, totals and incidents. */
+export type TriageStatus = "confirmed" | "false_positive" | "verified_field";
+export type TriageReason = "boat" | "sandbar" | "other";
+
+/** What the member's ONG decided about an incident (shared by its members); `null` means nobody looked yet. */
+export type Triage = {
+  status: TriageStatus;
+  status_label: string;
+  reason: TriageReason | "";
+  reason_label: string;
+  updated_at: string;
+  /** Null for observers: they see that someone decided, never who. */
+  set_by: string | null;
+};
+
 export type Incident = {
   id: number;
   river: { slug: string; name: string; protected_area: string };
@@ -231,6 +245,7 @@ export type Incident = {
   /** Signed links to the crops of the strongest detections; empty while the bucket is not readable. */
   crops: string[];
   evidence_pinned: boolean;
+  triage: Triage | null;
   expediente: null | {
     status: Status;
     status_label: string;
@@ -246,9 +261,17 @@ export type Incident = {
 export type Panel = {
   /** The API's clock: today's date and time, real or simulated. */
   clock?: import("./lib/clock").Clock;
-  member: { name: string; phone: string; joined_now: boolean };
+  member: { name: string; phone: string; joined_now: boolean; role?: "member" | "observer"; can_act?: boolean };
   ong: { name: string; rivers: { slug: string; name: string; protected_area: string }[]; members: number };
-  totals: { incidents: number; without_expediente: number; draft: number; ready: number; filed: number };
+  totals: {
+    incidents: number;
+    without_expediente: number;
+    draft: number;
+    ready: number;
+    filed: number;
+    /** Incidents by decision of the ONG; `new` is the ones nobody has looked at. */
+    triage?: Record<TriageStatus | "new", number>;
+  };
   /** First page of incidents, newest first; the rest come from GET /api/v1/me/incidentes?page=N. */
   incidents: Incident[];
   /** DRF page links (absolute URLs); `count` is every incident of the ONG. */

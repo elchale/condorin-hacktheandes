@@ -50,7 +50,8 @@ def test_lists_the_ong_incidents(client, scene):
     assert body['member']['joined_now'] is False
     assert body['member']['role'] == 'member' and body['member']['can_act'] is True  # added by the ONG
     assert body['ong']['name'] == 'Amazonía Viva'
-    assert body['totals'] == {'incidents': 1, 'without_expediente': 0, 'draft': 1, 'ready': 0, 'filed': 0}
+    assert body['totals'] == {'incidents': 1, 'without_expediente': 0, 'draft': 1, 'ready': 0, 'filed': 0,
+                              'triage': {'new': 1, 'confirmed': 0, 'false_positive': 0, 'verified_field': 0}}
     incident = body['incidents'][0]
     assert incident['id'] == scene.pk
     assert incident['river']['name'] == 'Yaguas'

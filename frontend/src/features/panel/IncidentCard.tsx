@@ -1,6 +1,8 @@
 import { dragas } from "../shared/format";
 import { Icon } from "../shared/Icon";
-import type { Incident } from "../../types";
+import type { Incident, TriageReason, TriageStatus } from "../../types";
+import { TriageBar } from "./TriageBar";
+import { TRIAGE_STYLE } from "./triage";
 
 const STATUS_STYLE = {
   none: "bg-rojo/10 text-rojo-3",
@@ -38,15 +40,22 @@ type Props = {
   /** Opens the member's personal token for this incident on the expediente or the evento page. */
   onOpen: (incident: Incident, to: "expediente" | "evento") => void;
   busy?: boolean;
+  /** Members can decide what an incident is; observers only see the decision. */
+  canAct?: boolean;
+  onTriage?: (incident: Incident, status: TriageStatus, reason?: TriageReason) => void;
+  onClearTriage?: (incident: Incident) => void;
 };
 
-export function IncidentCard({ incident, onOpen, busy = false }: Props) {
+export function IncidentCard({ incident, onOpen, busy = false, canAct = false, onTriage, onClearTriage }: Props) {
   const e = incident.expediente;
   const step = nextStep(e);
+  const triage = incident.triage;
+  // The ONG said the model was wrong: no denuncia to start until they undo it (the API refuses it too).
+  const rejected = triage?.status === "false_positive";
   const [crop, ...more] = incident.crops;
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-3xl bg-panel ring-1 ring-line">
+    <article className={`flex h-full flex-col overflow-hidden rounded-3xl bg-panel ring-1 ring-line ${rejected ? "opacity-75" : ""}`}>
       <div className="relative aspect-[16/9] bg-panel-2">
         {crop ? (
           // Signed GCS links that expire: shown as is, lazily.
@@ -67,9 +76,16 @@ export function IncidentCard({ incident, onOpen, busy = false }: Props) {
       <div className="flex flex-1 flex-col p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-lg font-bold">Río {incident.river.name}</h3>
-          <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_STYLE[e?.status ?? "none"]}`}>
-            {e ? e.status_label : "Sin expediente"}
-          </span>
+          <div className="flex flex-wrap gap-2">
+            {triage && (
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${TRIAGE_STYLE[triage.status]}`}>{triage.status_label}</span>
+            )}
+            {!rejected && (
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_STYLE[e?.status ?? "none"]}`}>
+                {e ? e.status_label : "Sin expediente"}
+              </span>
+            )}
+          </div>
         </div>
         <p className="mt-1 text-sm text-muted">
           {dragas(incident.detections)} · {incident.captured_at_label} · {incident.satellite}
@@ -90,12 +106,26 @@ export function IncidentCard({ incident, onOpen, busy = false }: Props) {
           )}
         </dl>
 
-        <p className="mt-4 text-sm">{step.note}</p>
+        {canAct && onTriage && onClearTriage ? (
+          <TriageBar incident={incident} disabled={busy} onSet={onTriage} onClear={onClearTriage} />
+        ) : (
+          triage && (
+            <p className="mt-4 text-sm text-muted">
+              Tu ONG la marcó como «{triage.status_label}»{triage.reason_label ? ` (${triage.reason_label})` : ""}.
+            </p>
+          )
+        )}
+
+        <p className="mt-4 text-sm">
+          {rejected ? "Marcada como no es una draga. No hace falta una denuncia." : step.note}
+        </p>
         <div className="mt-auto flex flex-col gap-3 pt-4 sm:flex-row sm:flex-wrap">
-          <button type="button" disabled={busy} onClick={() => onOpen(incident, "expediente")} className={`${step.style} disabled:opacity-60`}>
-            {step.button}
-            <Icon name="arrow" className="size-5" />
-          </button>
+          {!rejected && (
+            <button type="button" disabled={busy} onClick={() => onOpen(incident, "expediente")} className={`${step.style} disabled:opacity-60`}>
+              {step.button}
+              <Icon name="arrow" className="size-5" />
+            </button>
+          )}
           <button
             type="button"
             disabled={busy}
