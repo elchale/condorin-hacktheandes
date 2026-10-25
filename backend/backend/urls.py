@@ -8,6 +8,7 @@ from accounts.views import (
     LinkEnterView,
     MeExpedienteView,
     MeIncidentsView,
+    MeTriageView,
     MeView,
     SignOutView,
 )
@@ -16,7 +17,7 @@ from detections.views import DetectionWebhookView
 from expedientes.views import EventoView, ExpedienteSendView, ExpedienteView
 from fuentes.views import FuentesRefreshView, FuentesView
 from mapa.views import MapaView
-from panel.views import ActivityView, LinkSignInView, PanelExpedienteView, PanelView
+from panel.views import ActivityView, LinkSignInView, PanelExpedienteView, PanelTriageView, PanelView
 
 admin.site.site_header = 'Ojo de Cóndor'
 admin.site.site_title = 'Ojo de Cóndor'
@@ -39,6 +40,7 @@ urlpatterns = [
     # and the admin live feed.
     path('api/v1/panel', PanelView.as_view(), name='panel'),
     path('api/v1/panel/incidentes/<int:image_id>/expediente', PanelExpedienteView.as_view(), name='panel-expediente'),
+    path('api/v1/panel/incidentes/<int:image_id>/triaje', PanelTriageView.as_view(), name='panel-triage'),
     path('api/v1/panel/enlace', LinkSignInView.as_view(), name='panel-link'),
     path('api/v1/panel/actividad', ActivityView.as_view(), name='panel-activity'),
 
@@ -53,4 +55,5 @@ urlpatterns = [
     path('api/v1/me', MeView.as_view(), name='me'),
     path('api/v1/me/incidentes', MeIncidentsView.as_view(), name='me-incidents'),
     path('api/v1/me/incidentes/<int:image_id>/expediente', MeExpedienteView.as_view(), name='me-expediente'),
+    path('api/v1/me/incidentes/<int:image_id>/triaje', MeTriageView.as_view(), name='me-triage'),
 ]

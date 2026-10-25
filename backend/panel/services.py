@@ -5,13 +5,13 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Prefetch, QuerySet
 from django.utils import timezone
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from core import clock, gcs
 from core.exceptions import BaseError
-from detections.models import Alert, Detection, SatelliteImage, default_expiry
+from detections.models import Alert, Detection, SatelliteImage, Triage, default_expiry
 from expedientes.models import Expediente
-from expedientes.services import missing_fields
+from expedientes.services import missing_fields, require_can_act
 from ongs.models import Member, Ong
 
 from .welcome import send_welcome
@@ -22,6 +22,11 @@ INCIDENT_LIMIT = 50
 class NoOngAvailable(BaseError):
     status_code = 503
     default_detail = 'Todavía no hay una ONG para unirte. Escríbenos y te ayudamos.'
+
+
+class TriageRejected(BaseError):
+    status_code = 409
+    default_detail = 'Tu ONG marcó esta detección como "No es una draga". Cámbiala antes de abrir un expediente.'
 
 
 def default_ong() -> Ong | None:
@@ -82,36 +87,82 @@ def incident_images(ong: Ong) -> QuerySet[SatelliteImage]:
     )
 
 
-def with_expedientes(ong: Ong, images) -> list[tuple[SatelliteImage, list[Detection], Expediente | None]]:
-    """Each scene with its alerting detections and the ONG's expediente for it, if any."""
+def with_expedientes(
+    ong: Ong, images,
+) -> list[tuple[SatelliteImage, list[Detection], Expediente | None, Triage | None]]:
+    """Each scene with its alerting detections, and the ONG's expediente and triage for it, if any."""
     images = list(images)
     expedientes = {
         e.image_id: e for e in Expediente.objects.filter(ong=ong, image__in=images)
         .select_related('updated_by').prefetch_related('authorities', 'filings')
     }
-    return [(image, image.alerting, expedientes.get(image.pk)) for image in images]
+    triages = {t.image_id: t for t in Triage.objects.filter(ong=ong, image__in=images).select_related('set_by')}
+    return [(image, image.alerting, expedientes.get(image.pk), triages.get(image.pk)) for image in images]
 
 
-def incidents(ong: Ong) -> list[tuple[SatelliteImage, list[Detection], Expediente | None]]:
+def incidents(ong: Ong) -> list[tuple[SatelliteImage, list[Detection], Expediente | None, Triage | None]]:
     """The newest INCIDENT_LIMIT incidents (condorin.pe's unpaged panel)."""
     return with_expedientes(ong, incident_images(ong)[:INCIDENT_LIMIT])
 
 
 def incident_totals(ong: Ong) -> dict:
-    """Counts over every incident of the ONG (not just one page), computed in the database."""
+    """Counts over every incident of the ONG (not just one page), computed in the database.
+
+    An incident the ONG rejected as "No es una draga" is no pending work: it leaves `without_expediente`
+    and `draft` (its automatic draft stays in the database, so undoing the rejection brings it back).
+    """
     images = incident_images(ong).order_by().prefetch_related(None)
     total = images.count()
+    triage = dict(
+        Triage.objects.filter(ong=ong, image__in=images.values('pk'))
+        .order_by().values_list('status').annotate(n=Count('pk'))
+    )
     by_status = dict(
         Expediente.objects.filter(ong=ong, image__in=images.values('pk'))
         .order_by().values_list('status').annotate(n=Count('pk'))
     )
+    rejected = Triage.objects.filter(
+        ong=ong, image__in=images.values('pk'), status=Triage.Status.FALSE_POSITIVE,
+    ).values('image')
+    rejected_expedientes = Expediente.objects.filter(ong=ong, image__in=rejected).order_by()
+    rejected_drafts = rejected_expedientes.filter(status=Expediente.Status.DRAFT).count()
+    rejected_without = rejected.count() - rejected_expedientes.count()
     return {
         'incidents': total,
-        'without_expediente': total - sum(by_status.values()),
-        'draft': by_status.get(Expediente.Status.DRAFT, 0),
+        'without_expediente': total - sum(by_status.values()) - rejected_without,
+        'draft': by_status.get(Expediente.Status.DRAFT, 0) - rejected_drafts,
         'ready': by_status.get(Expediente.Status.READY, 0),
         'filed': by_status.get(Expediente.Status.FILED, 0),
+        'triage': {
+            'new': total - sum(triage.values()),
+            **{value: triage.get(value, 0) for value in Triage.Status.values},
+        },
     }
+
+
+def set_triage(member: Member, image_id: int, status: str, reason: str = '') -> Triage:
+    """Record what the member's ONG decided about one scene; the last decision of any member wins."""
+    require_can_act(member)
+    if status not in Triage.Status.values:
+        raise ValidationError({'status': ['Elige: es una draga, no es una draga o verificada en campo.']})
+    if status == Triage.Status.FALSE_POSITIVE:
+        if reason not in Triage.Reason.values:
+            raise ValidationError({'reason': ['Cuéntanos qué era: bote, banco de arena o sombra, otra cosa.']})
+    else:
+        reason = ''
+    image = incident_images(member.ong).filter(pk=image_id).first()
+    if image is None:
+        raise NotFound('No encontramos esa detección en los ríos de tu ONG.')
+    triage, _ = Triage.objects.update_or_create(
+        image=image, ong=member.ong, defaults={'status': status, 'reason': reason, 'set_by': member},
+    )
+    return triage
+
+
+def clear_triage(member: Member, image_id: int) -> None:
+    """Back to "new": the ONG has not decided. Idempotent."""
+    require_can_act(member)
+    Triage.objects.filter(image_id=image_id, ong=member.ong).delete()
 
 
 def open_from_panel(member: Member, image_id: int) -> Alert:
@@ -119,6 +170,8 @@ def open_from_panel(member: Member, image_id: int) -> Alert:
     image = SatelliteImage.objects.filter(pk=image_id, river__ongs=member.ong).first()
     if image is None or not image.alerting_detections().exists():
         raise NotFound('No encontramos esa detección en los ríos de tu ONG.')
+    if Triage.objects.filter(image=image, ong=member.ong, status=Triage.Status.FALSE_POSITIVE).exists():
+        raise TriageRejected()
     alert, _ = Alert.objects.get_or_create(image=image, member=member, defaults={'status': Alert.Status.PANEL})
     if alert.is_expired:
         # The member is signed in, so an old link of theirs can simply be renewed.

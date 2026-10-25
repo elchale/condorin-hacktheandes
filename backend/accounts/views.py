@@ -7,6 +7,7 @@ GET   /api/v1/me?page=N                           Bearer → the GET /api/v1/pan
                                                   plus {"pagination": {"count", "next", "previous"}}
 GET   /api/v1/me/incidentes?page=N                Bearer → {"count", "next", "previous", "results"} ("Ver más")
 POST  /api/v1/me/incidentes/<id>/expediente       Bearer → {"token"} (the member's expediente link)
+POST  /api/v1/me/incidentes/<id>/triaje          Bearer {"status", "reason"?} → {"triage"}; DELETE puts it back to new
 POST  /api/v1/auth/salir                          Bearer → {"signed_out": true}; ends every session of that phone
 
 Browsers call these directly (the static SPA at condorin.pe and the map). A `link` session reads the panel
@@ -32,8 +33,16 @@ from core.exceptions import BaseError
 from core.middleware import mask_phone
 from core.throttling import PhoneThrottle, ScopedThrottle
 from expedientes.codes import MAX_ATTEMPTS, RESEND_SECONDS, CodeExpired, CodeInvalid, CodeTooSoon
-from panel.services import incident_images, member_for_phone, open_from_panel, sign_in_by_link, with_expedientes
-from panel.views import IncidentPagination, incident_rows, panel_payload
+from panel.services import (
+    clear_triage,
+    incident_images,
+    member_for_phone,
+    open_from_panel,
+    set_triage,
+    sign_in_by_link,
+    with_expedientes,
+)
+from panel.views import IncidentPagination, incident_rows, panel_payload, triage_payload
 
 from .models import Member as SiteUser
 from .session import (
@@ -213,3 +222,18 @@ class MeExpedienteView(APIView):
     def post(self, request, image_id):
         member, _ = member_for_phone(require_session(request))
         return Response({'token': open_from_panel(member, image_id).token})
+
+
+class MeTriageView(APIView):
+    """What the member's ONG decided about one incident: real, not a dredge (with why) or verified in the field."""
+    throttle_scope = 'me'
+
+    def post(self, request, image_id):
+        member, _ = member_for_phone(require_session(request))
+        triage = set_triage(member, image_id, str(request.data.get('status', '')), str(request.data.get('reason', '')))
+        return Response({'triage': triage_payload(triage, member)})
+
+    def delete(self, request, image_id):
+        member, _ = member_for_phone(require_session(request))
+        clear_triage(member, image_id)
+        return Response({'triage': None})

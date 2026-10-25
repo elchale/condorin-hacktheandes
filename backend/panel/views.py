@@ -20,12 +20,14 @@ from expedientes.drafting import place_sentence
 from .activity import activity_feed, parse_limit
 from .auth import authenticate_frontend, member_phone
 from .services import (
+    clear_triage,
     crop_url,
     incident_totals,
     incidents,
     member_for_phone,
     missing_count,
     open_from_panel,
+    set_triage,
     sign_in_by_link,
 )
 
@@ -48,7 +50,19 @@ class FrontendView(APIView):
         authenticate_frontend(request)
 
 
-def _incident(image, detections, expediente, viewer=None) -> dict:
+def triage_payload(triage, viewer=None) -> dict:
+    return {
+        'status': triage.status,
+        'status_label': triage.get_status_display(),
+        'reason': triage.reason,
+        'reason_label': triage.get_reason_display() if triage.reason else '',
+        'updated_at': triage.updated,
+        # Like the expediente: an observer sees that someone decided, never who.
+        'set_by': triage.set_by.full_name if triage.set_by and (viewer is None or viewer.can_act) else None,
+    }
+
+
+def _incident(image, detections, expediente, triage=None, viewer=None) -> dict:
     best = detections[0]
     lat, lon = coord(best.lat), coord(best.lon)
     return {
@@ -67,6 +81,7 @@ def _incident(image, detections, expediente, viewer=None) -> dict:
         'maps_url': maps_url(lat, lon),
         'crops': [url for url in (crop_url(d) for d in detections[:CARD_CROPS]) if url],
         'evidence_pinned': bool(image.md5_hash),
+        'triage': triage and triage_payload(triage, viewer),
         'expediente': expediente and {
             'status': expediente.status,
             'status_label': status_label(expediente),
@@ -120,6 +135,20 @@ class PanelExpedienteView(FrontendView):
         member, _ = member_for_phone(member_phone(request))
         alert = open_from_panel(member, image_id)
         return Response({'token': alert.token})
+
+
+class PanelTriageView(FrontendView):
+    """POST {"status", "reason"?} sets the ONG's decision on one incident; DELETE puts it back to new."""
+
+    def post(self, request, image_id):
+        member, _ = member_for_phone(member_phone(request))
+        triage = set_triage(member, image_id, str(request.data.get('status', '')), str(request.data.get('reason', '')))
+        return Response({'triage': triage_payload(triage, member)})
+
+    def delete(self, request, image_id):
+        member, _ = member_for_phone(member_phone(request))
+        clear_triage(member, image_id)
+        return Response({'triage': None})
 
 
 class LinkSignInView(FrontendView):
