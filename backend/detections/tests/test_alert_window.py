@@ -161,7 +161,7 @@ def fill_sent(n: int, river) -> None:
         Alert.objects.create(image=other, member=member, status=Alert.Status.SENT, sent_at=timezone.now())
 
 
-def test_cap_lets_the_50th_out_and_caps_the_51st(post_detection, payload, ong, sent, river):
+def test_cap_lets_the_last_one_out_and_caps_the_next(post_detection, payload, ong, sent, river):
     fill_sent(limits.HACKATHON_MAX_ALERT_MESSAGES - 1, river)
     payload['image']['captured_at'] = lima_day(0, hour=0)
     resp = post_detection(payload)
@@ -171,7 +171,7 @@ def test_cap_lets_the_50th_out_and_caps_the_51st(post_detection, payload, ong, s
     statuses = sorted(Alert.objects.filter(image_id=resp.json()['id']).values_list('status', flat=True))
     assert statuses == [Alert.Status.CAPPED, Alert.Status.SENT]
     capped = Alert.objects.get(status=Alert.Status.CAPPED)
-    assert capped.error == 'Límite de 50 mensajes del hackathon alcanzado' and capped.attempts == 0
+    assert capped.error == limits.CAPPED_ERROR and capped.attempts == 0
     assert Alert.objects.filter(status=Alert.Status.SENT).count() == limits.HACKATHON_MAX_ALERT_MESSAGES
 
 
@@ -214,7 +214,7 @@ def test_hackathon_limits_come_from_the_settings_with_the_old_values(settings):
     from datetime import datetime
 
     assert settings.HACKATHON_ALERT_WINDOW_DAYS == 2  # the module value is patched off in conftest
-    assert limits.HACKATHON_MAX_ALERT_MESSAGES == 50
+    assert limits.HACKATHON_MAX_ALERT_MESSAGES == 150
     assert limits.HACKATHON_CAP_SINCE == datetime(2026, 10, 18, 7, 50, tzinfo=timezone.get_fixed_timezone(-300))
     assert limits._since('2026-10-18T07:50:00') == limits.HACKATHON_CAP_SINCE  # naive means Lima
     assert limits._since(None) is None

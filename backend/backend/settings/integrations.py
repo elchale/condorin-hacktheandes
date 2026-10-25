@@ -30,7 +30,7 @@ def _optional(name: str, default: str) -> str | None:
 _window = _optional('HACKATHON_ALERT_WINDOW_DAYS', '2')
 HACKATHON_ALERT_WINDOW_DAYS = int(_window) if _window else None
 # Once this many WhatsApp alerts have been sent in total, no further alert goes out.
-_cap = _optional('HACKATHON_MAX_ALERT_MESSAGES', '50')
+_cap = _optional('HACKATHON_MAX_ALERT_MESSAGES', '150')
 HACKATHON_MAX_ALERT_MESSAGES = int(_cap) if _cap else None
 # Only alerts sent from this instant (ISO 8601 with offset) count toward the cap.
 HACKATHON_CAP_SINCE = _optional('HACKATHON_CAP_SINCE', '2026-10-18T07:50:00-05:00')
