@@ -18,7 +18,9 @@ import math
 import re
 from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -117,6 +119,13 @@ def create_app() -> FastAPI:
     setup_logging(settings.log_level)
     app = FastAPI(title="condorin-detector-trigger", docs_url=None, redoc_url=None)
 
+    @app.exception_handler(RequestValidationError)
+    async def log_invalid_request(request: Request, exc: RequestValidationError):
+        problems = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]
+        log.warning("invalid request: " + "; ".join(problems),
+                    extra={"http_status": 422, "fields": {"path": request.url.path}})  # fmt: skip
+        return await request_validation_exception_handler(request, exc)
+
     # Not /healthz: Cloud Run's front end reserves paths ending in "z" and answers them with 404
     # before they reach the container.
     @app.get("/health")
@@ -128,10 +137,19 @@ def create_app() -> FastAPI:
         prefix = req.prefix
         images = None
         if settings.check_prefix:
-            images = count_images(settings.input_bucket, prefix, settings.image_suffixes)
+            try:
+                images = count_images(settings.input_bucket, prefix, settings.image_suffixes)
+            except Exception as err:
+                log.exception("could not list the prefix", extra={"fields": {
+                    "prefix": prefix, "bucket": settings.input_bucket}})  # fmt: skip
+                raise HTTPException(502, "could not list the images under the prefix") from err
             if not images:
+                log.warning("no images under the prefix", extra={"http_status": 404, "fields": {
+                    "prefix": prefix, "bucket": settings.input_bucket}})  # fmt: skip
                 raise HTTPException(404, f"no images under gs://{settings.input_bucket}/{prefix}")
         if req.tasks is not None and req.tasks > settings.max_tasks:
+            log.warning("too many tasks requested", extra={"http_status": 422, "fields": {
+                "prefix": prefix, "tasks": req.tasks, "max_tasks": settings.max_tasks}})  # fmt: skip
             raise HTTPException(422, f"tasks must be <= {settings.max_tasks}")
         tasks = req.tasks or (task_count(images, settings) if images else 1)
         if images and images > tasks * settings.images_per_task:
@@ -143,6 +161,9 @@ def create_app() -> FastAPI:
             log.exception("could not start the job", extra={"fields": {"prefix": prefix}})
             raise HTTPException(502, "could not start the detector job") from err
         execution = (op.get("metadata") or {}).get("name") or op.get("name")
+        if not execution:
+            log.warning("job started but the API returned no execution name",
+                        extra={"fields": {"prefix": prefix, "response": str(op)[:500]}})  # fmt: skip
         log.info("job started", extra={"fields": {"prefix": prefix, "execution": execution,
                                                   "images": images, "tasks": tasks}})  # fmt: skip
         return {

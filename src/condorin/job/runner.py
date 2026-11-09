@@ -47,9 +47,10 @@ _SLUG = re.compile(r"^[-a-zA-Z0-9_]+$")
 class SkipImage(Exception):
     """The image cannot be reported correctly; `reason` is a short machine-readable code."""
 
-    def __init__(self, reason: str, detail: str = ""):
+    def __init__(self, reason: str, detail: str = "", fields: dict | None = None):
         super().__init__(f"{reason}: {detail}" if detail else reason)
         self.reason = reason
+        self.fields = fields or {}  # extra context for the log line
 
 
 @dataclass
@@ -186,6 +187,12 @@ class Runner:
         self.gsd_unchecked = 0
         self.jev_confirmed = 0
         self.jev_rejections: list[dict] = []
+        # Context of the image being processed (generation, idempotency key, stage timings),
+        # filled by process() as it goes so a failure is logged with what was known.
+        self.current: dict = {}
+
+    def _timed(self, stage: str, t0: float) -> None:
+        self.current.setdefault("timings_ms", {})[stage] = round((time.monotonic() - t0) * 1000)
 
     @property
     def min_confidence(self) -> float:
@@ -226,6 +233,7 @@ class Runner:
         summary = Summary(listed=len(objects))
         root = bucket_root(self.settings)
         slowest = 0.0
+        seen_errors: set[str] = set()
         for i, obj in enumerate(objects):
             if deadline is not None and time.monotonic() + slowest > deadline:
                 rest = objects[i:]
@@ -236,22 +244,34 @@ class Runner:
                                 "not_started": len(rest), "first": rest[0]}})  # fmt: skip
                 break
             t0 = time.monotonic()
+            self.current = {}
             ctx = {"image_uri": storage.join(root, obj), "model_version": self.card.version}
             try:
                 answer, n = self.process(obj)
             except SkipImage as err:
                 summary.fail(obj, err.reason, str(err))
-                log.warning("image not reported", extra={**ctx, "status": err.reason,
-                                                         "error": str(err)})  # fmt: skip
+                log.warning("image not reported", extra={**ctx, **self.current, "status": err.reason,
+                            "error": str(err), "fields": err.fields})  # fmt: skip
                 continue
             except DeliveryError as err:
                 summary.fail(obj, f"backend_{err.status or 'unreachable'}", str(err))
-                log.error("backend rejected the report", extra={**ctx, "http_status": err.status,
+                log.error("report not delivered to the backend", extra={**ctx, **self.current,
+                          "status": "delivery_failed", "http_status": err.status,
                           "error": str(err), "fields": {"response": err.body}})  # fmt: skip
                 continue
             except storage.StorageError as err:
                 summary.fail(obj, "storage", f"{type(err).__name__}: {err}")
-                log.error("storage error", extra={**ctx, "error": f"{type(err).__name__}: {err}"})
+                log.error("storage error, image not reported", extra={**ctx, **self.current,
+                          "status": "storage", "error": f"{type(err).__name__}: {err}"})  # fmt: skip
+                continue
+            except Exception as err:  # noqa: BLE001 - one bad image must not end the whole task
+                summary.fail(obj, "internal_error", f"{type(err).__name__}: {err}")
+                name = type(err).__name__
+                first = name not in seen_errors  # full traceback once per error type, not per image
+                seen_errors.add(name)
+                log.error(f"unexpected {name}, image not reported", exc_info=first,
+                          extra={**ctx, **self.current, "status": "internal_error",
+                                 "error": f"{name}: {err}"})  # fmt: skip
                 continue
             finally:
                 slowest = max(slowest, time.monotonic() - t0)
@@ -266,7 +286,7 @@ class Runner:
                 summary.without_findings += 1
             summary.duplicates += bool(answer.get("duplicate"))
             summary.alerted += bool(answer.get("alerted"))
-            log.info("image reported", extra={**ctx, "status": "reported", "fields": {
+            log.info("image reported", extra={**ctx, **self.current, "status": "reported", "fields": {
                 "detections": n, "backend": answer,
                 "elapsed_ms": round((time.monotonic() - t0) * 1000)}})  # fmt: skip
         return summary
@@ -295,8 +315,9 @@ class Runner:
             })  # fmt: skip
         kept = [d for d in found if d.conf < trigger or id(d) in passed]
         if len(kept) < len(found):
-            log.info("jev rejected detections", extra={"fields": {
-                "object": obj, "rejected": len(found) - len(kept), "kept": len(kept)}})  # fmt: skip
+            log.info("jev rejected detections", extra={
+                "image_uri": storage.join(bucket_root(self.settings), obj), "fields": {
+                "rejected": len(found) - len(kept), "kept": len(kept)}})  # fmt: skip
         return kept
 
     def process(self, obj: str) -> tuple[dict, int]:
@@ -304,9 +325,12 @@ class Runner:
         root = bucket_root(self.settings)
         uri = storage.join(root, obj)
         bucket = storage.parse_uri(uri).bucket
+        t0 = time.monotonic()
         info = storage.stat(uri)
         generation = info.generation
+        self.current["idempotency_key"] = idempotency_key(bucket, obj, generation)
         raw = storage.read_bytes(uri, generation)  # exactly the version we report
+        self._timed("read", t0)
 
         meta = resolve_image_meta(bucket, obj, info.metadata, None)
         river = (meta["river"] or "").lower()
@@ -322,25 +346,39 @@ class Runner:
             self.gsd_unchecked += (
                 1  # the model is resolution-sensitive but this scene's GSD is unknown
             )
+        t0 = time.monotonic()
         qc = run_qc(raw, self.card.qc, gsd_m=gsd_m)
+        self._timed("qc", t0)
+        qc_fields = {k: v for k, v in qc.checks.items() if k not in ("truncated", "gsd_checked")}
         if not qc.passed:
-            raise SkipImage("rejected_qc", ",".join(map(str, qc.reasons)))
+            raise SkipImage("rejected_qc", ",".join(map(str, qc.reasons)), {"qc": qc_fields})
+        if qc.checks.get("truncated"):
+            log.warning("truncated image: processing only the surviving rows",
+                        extra={"image_uri": uri, "fields": {"qc": qc_fields}})  # fmt: skip
 
+        t0 = time.monotonic()
         found = sorted(
             (d for d in self.detector.detect(qc.image_bgr)
              if d.cls == self.card.positive_class and d.conf >= self.min_confidence),
             key=lambda d: -d.conf,
         )  # fmt: skip
+        self._timed("detect", t0)
         if found and not meta["bounds"]:
             raise SkipImage("no_bounds", f"{len(found)} findings but no bounds to place them")
         if len(found) > MAX_DETECTIONS:
             log.warning("too many detections, keeping the strongest",
                         extra={"image_uri": uri, "fields": {"found": len(found)}})  # fmt: skip
             found = found[:MAX_DETECTIONS]
+        t0 = time.monotonic()
         found = self.confirm(obj, qc.image_bgr, found)
+        if self.validator is not None:
+            self._timed("jev", t0)
 
         detections = []
+        t0 = time.monotonic()
         crop_uris = self.crop_uris(obj, generation, qc.image_bgr, found)
+        if found:
+            self._timed("crops", t0)
         for d, crop_uri in zip(found, crop_uris, strict=True):
             bbox, lat, lon = box_to_webhook(d.box, qc.width, qc.height, meta["bounds"])
             detections.append({
@@ -360,7 +398,10 @@ class Runner:
             "model": {"name": self.card.name, "version": self.card.version},
             "detections": detections,
         }
-        return self.reporter.post(payload, idempotency_key(bucket, obj, generation)), len(found)
+        t0 = time.monotonic()
+        answer = self.reporter.post(payload, self.current["idempotency_key"])
+        self._timed("post", t0)
+        return answer, len(found)
 
 
 def write_report(
@@ -419,11 +460,32 @@ def warn_runtime_drift(card: ModelCard) -> list[str]:
 
 
 def main() -> int:
+    """Entry point: any unexpected error is logged as one CRITICAL entry and exits 1."""
+    from condorin.logs import setup_logging
+
+    setup_logging(os.environ.get("LOG_LEVEL", "INFO"))  # before settings: their errors are logged
+    try:
+        return _main()
+    except Exception as err:  # noqa: BLE001
+        log.critical(f"job task crashed: {type(err).__name__}: {err}", exc_info=True)
+        return 1
+
+
+def _main() -> int:
+    from pydantic import ValidationError
+
     from condorin.core.detector import build_detector
     from condorin.core.model_card import load_model_card
     from condorin.logs import setup_logging
 
-    settings = JobSettings()
+    try:
+        settings = JobSettings()
+    except ValidationError as err:  # field names and reasons only: inputs may hold secrets
+        problems = [
+            f"{'.'.join(map(str, e['loc'])) or 'settings'}: {e['msg']}" for e in err.errors()
+        ]
+        log.error("invalid job settings: " + "; ".join(problems))
+        return 2
     setup_logging(settings.log_level)
     prefix = settings.prefix.strip().lstrip("/")
     if not prefix:
@@ -441,12 +503,20 @@ def main() -> int:
         log.error("no model_card.json in MODEL_DIR (was the model baked into the image?)",
                   extra={"fields": {"model_dir": settings.model_dir}})  # fmt: skip
         return 2
+    except ValueError as err:  # bad JSON or a card that fails validation
+        log.error(f"model_card.json is invalid: {err}",
+                  extra={"fields": {"model_dir": settings.model_dir}})  # fmt: skip
+        return 2
     if not settings.fake_model:
         warn_runtime_drift(card)
     try:
         detector = build_detector(settings, card)
     except (ModelCardMismatch, FileNotFoundError) as err:
         log.error(f"model not usable: {err}", extra={"model_version": card.version})
+        return 2
+    except Exception as err:  # noqa: BLE001 - corrupt weights, torch/CUDA errors
+        log.error(f"could not load the model: {type(err).__name__}: {err}", exc_info=True,
+                  extra={"model_version": card.version})  # fmt: skip
         return 2
 
     validator = None
@@ -459,7 +529,15 @@ def main() -> int:
 
     index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
     count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
-    objects = list_images(settings, prefix)
+    try:
+        objects = list_images(settings, prefix)
+    except storage.StorageError as err:
+        log.error(f"could not list the images: {type(err).__name__}: {err}",
+                  extra={"fields": {"prefix": prefix, "bucket": settings.input_bucket}})  # fmt: skip
+        return 1
+    if not objects:
+        log.warning("no images under the prefix", extra={"fields": {
+            "prefix": prefix, "bucket": settings.input_bucket}})  # fmt: skip
     mine = shard(objects, index, count)[: settings.max_images]
     log.info("starting", extra={"model_version": card.version, "fields": {
         "prefix": prefix, "bucket": settings.input_bucket, "images_total": len(objects),

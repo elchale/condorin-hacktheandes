@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from datetime import UTC, datetime
 
@@ -20,6 +21,10 @@ CONTEXT_FIELDS = (
     "http_status",
     "error",
 )
+# Cloud Run Job execution and task, added to every entry so one task's logs can be filtered.
+TASK_ENV = {"execution": "CLOUD_RUN_EXECUTION", "task_index": "CLOUD_RUN_TASK_INDEX"}
+
+log = logging.getLogger(__name__)
 
 
 class JsonFormatter(logging.Formatter):
@@ -30,6 +35,9 @@ class JsonFormatter(logging.Formatter):
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "logger": record.name,
         }
+        for key, env in TASK_ENV.items():
+            if value := os.environ.get(env):
+                entry[key] = value
         for key in CONTEXT_FIELDS:
             if hasattr(record, key):
                 entry[key] = getattr(record, key)
@@ -41,9 +49,29 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str, ensure_ascii=False)
 
 
+def _log_uncaught(exc_type, exc, tb) -> None:
+    """Uncaught exceptions become one CRITICAL JSON entry instead of raw stderr lines."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc, tb)
+        return
+    log.critical(f"uncaught {exc_type.__name__}: {exc}", exc_info=(exc_type, exc, tb))
+
+
 def setup_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]
-    root.setLevel(level.upper())
+    try:
+        root.setLevel(level.upper())
+    except ValueError:
+        root.setLevel(logging.INFO)
+        log.warning(f"unknown LOG_LEVEL {level!r}, using INFO")
+    # uvicorn installs its own plain-text handlers; send its logs through the JSON handler.
+    # Access logs stay off below WARNING: Cloud Run already logs every request.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        lg = logging.getLogger(name)
+        lg.handlers[:] = []
+        lg.propagate = True
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    sys.excepthook = _log_uncaught

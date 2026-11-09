@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import logging
+import sys
 
 import numpy as np
 import pytest
@@ -36,3 +38,14 @@ def card() -> ModelCard:
 @pytest.fixture
 def jpeg_bytes() -> bytes:
     return encode(make_image())
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging():
+    """main() / the trigger call setup_logging, which binds a handler to the current (captured)
+    stdout and replaces sys.excepthook; undo that so later tests do not log to a closed stream."""
+    root = logging.getLogger()
+    handlers, level, hook = root.handlers[:], root.level, sys.excepthook
+    yield
+    root.handlers[:], sys.excepthook = handlers, hook
+    root.setLevel(level)

@@ -437,3 +437,74 @@ def test_gsd_ignored_when_the_card_has_no_expectation(tmp_path, card):
     r, _ = runner(card, tmp_path, [])
     summary = r.run([SCENE])
     assert summary.processed == 1 and summary.gsd_unchecked == 0
+
+
+# --- failure logging ----------------------------------------------------------------------------
+
+
+class ExplodingDetector(StubDetector):
+    def detect(self, image_bgr):
+        raise RuntimeError("CUDA out of memory")
+
+
+def test_unexpected_error_fails_the_image_not_the_task(tmp_path, card, caplog):
+    names = [f"yaguas/2026-10-18T06{i}0Z_s1.jpeg" for i in range(2)]
+    for n in names:
+        put(tmp_path, n, {"bounds": BOUNDS})
+    reporter = RecordingReporter()
+    r = Runner(settings_for(tmp_path), card, ExplodingDetector(card, []), reporter)
+    summary = r.run(names)
+    assert summary.failures == {"internal_error": 2} and summary.listed == 2
+    errors = [rec for rec in caplog.records if rec.message.startswith("unexpected RuntimeError")]
+    assert len(errors) == 2 and errors[0].exc_info and not errors[1].exc_info  # traceback once
+    assert "#" in errors[0].idempotency_key and "read" in errors[0].timings_ms
+
+
+def test_qc_rejection_logs_the_checks(tmp_path, card, caplog):
+    p = tmp_path / SCENE
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"not an image")
+    r, _ = runner(card, tmp_path, [])
+    r.run([SCENE])
+    rec = next(rec for rec in caplog.records if rec.message == "image not reported")
+    assert rec.status == "rejected_qc" and rec.fields["qc"]["format"] is None
+
+
+def test_reporter_retries_token_failures_and_logs_each_retry(caplog):
+    s = JobSettings(webhook_mode="post", webhook_attempts=2)
+
+    def no_token(aud):
+        raise RuntimeError("metadata server unreachable")
+
+    rep = Reporter(s, session=FakeSession([]), token_fetcher=no_token, sleep=lambda _: None)
+    with pytest.raises(DeliveryError, match="could not get an ID token"):
+        rep.post({}, "k")
+    retries = [rec for rec in caplog.records if "retrying" in rec.message]
+    assert len(retries) == 1 and retries[0].idempotency_key == "k"
+
+
+def test_main_rejects_invalid_settings_and_model_card(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("INPUT_BUCKET", str(tmp_path))
+    monkeypatch.setenv("PREFIX", "yaguas/")
+    monkeypatch.setenv("JEV_CROP_PX", "10")
+    assert main() == 2
+    assert "invalid job settings" in capsys.readouterr().out
+    monkeypatch.delenv("JEV_CROP_PX")
+    (tmp_path / "model_card.json").write_text("{not json")
+    monkeypatch.setenv("MODEL_DIR", str(tmp_path))
+    assert main() == 2
+    assert "model_card.json is invalid" in capsys.readouterr().out
+
+
+def test_main_logs_a_crash_as_one_json_entry(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("INPUT_BUCKET", str(tmp_path))
+    monkeypatch.setenv("PREFIX", "yaguas/")
+    monkeypatch.setenv("FAKE_MODEL", "1")
+
+    def boom(*a, **kw):
+        raise KeyError("x")
+
+    monkeypatch.setattr("condorin.job.runner.list_images", boom)
+    assert main() == 1
+    last = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert last["severity"] == "CRITICAL" and "KeyError" in last["exception"]

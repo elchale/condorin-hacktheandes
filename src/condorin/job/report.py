@@ -71,31 +71,50 @@ class Reporter:
 
         attempts = self.settings.webhook_attempts
         for attempt in range(1, attempts + 1):
-            headers = {
-                "Authorization": f"Bearer {self._bearer()}",
-                "Idempotency-Key": idempotency_key,
-                "Content-Type": "application/json",
-            }
-            try:
-                resp = self.session.post(
-                    self.settings.webhook_url, data=body, headers=headers,
-                    timeout=self.settings.webhook_timeout_s,
-                )  # fmt: skip
-            except requests.RequestException as err:
-                error: DeliveryError = DeliveryError(f"transport error: {type(err).__name__}")
-            else:
-                if 200 <= resp.status_code < 300:
-                    return _json(resp)
-                error = DeliveryError(
-                    f"backend answered {resp.status_code}", resp.status_code, _json(resp)
-                )
-                if resp.status_code == 401 and self._token is not None and attempt == 1:
-                    self._token = None  # maybe expired: mint a new one once
-                elif resp.status_code < 500 and resp.status_code not in RETRY_STATUSES:
-                    raise error  # validation or auth problem: retrying will not help
+            result = self._attempt(body, idempotency_key, attempt)
+            if isinstance(result, dict):
+                return result
+            error = result
             if attempt < attempts:
-                self.sleep(self.settings.webhook_backoff_s * 2 ** (attempt - 1))
+                delay = self.settings.webhook_backoff_s * 2 ** (attempt - 1)
+                log.warning(f"backend delivery attempt {attempt}/{attempts} failed, retrying",
+                            extra={"idempotency_key": idempotency_key, "http_status": error.status,
+                                   "error": str(error), "fields": {"retry_in_s": delay}})  # fmt: skip
+                self.sleep(delay)
         raise error
+
+    def _attempt(self, body: bytes, idempotency_key: str, attempt: int) -> dict | DeliveryError:
+        """One POST. Returns the backend's JSON answer, or the error to retry; raises DeliveryError
+        when retrying cannot help."""
+        try:
+            bearer = self._bearer()
+        except Exception as err:  # noqa: BLE001 - metadata server / ADC failures are retried
+            return DeliveryError(f"could not get an ID token: {type(err).__name__}: {err}")
+        headers = {
+            "Authorization": f"Bearer {bearer}",
+            "Idempotency-Key": idempotency_key,
+            "Content-Type": "application/json",
+        }
+        try:
+            resp = self.session.post(
+                self.settings.webhook_url, data=body, headers=headers,
+                timeout=self.settings.webhook_timeout_s,
+            )  # fmt: skip
+        except requests.RequestException as err:
+            return DeliveryError(f"transport error: {type(err).__name__}: {str(err)[:200]}")
+        if 200 <= resp.status_code < 300:
+            answer = _json(resp)
+            if "raw" in answer:
+                log.warning("backend answered 2xx without a JSON object",
+                            extra={"idempotency_key": idempotency_key,
+                                   "http_status": resp.status_code})  # fmt: skip
+            return answer
+        error = DeliveryError(f"backend answered {resp.status_code}", resp.status_code, _json(resp))
+        if resp.status_code == 401 and self._token is not None and attempt == 1:
+            self._token = None  # maybe expired: mint a new one once
+        elif resp.status_code < 500 and resp.status_code not in RETRY_STATUSES:
+            raise error  # validation or auth problem: retrying will not help
+        return error
 
 
 def _json(resp: requests.Response) -> dict:
