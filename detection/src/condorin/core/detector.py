@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,8 +120,13 @@ class YoloDetector:
         weights = Path(model_dir) / card.weights
         if not weights.is_file():
             raise FileNotFoundError(f"model weights not found: {weights}")
+        t0 = time.monotonic()
         self.model = YOLO(str(weights), task="detect")
         check_class_names(self.model.names, card)
+        log.info("model loaded", extra={"model_version": card.version, "fields": {
+            "weights": str(weights), "device": self.device, "classes": card.classes,
+            "batch": batch, "torch_threads": torch_threads, "gate": tile_filter is not None,
+            "load_ms": round((time.monotonic() - t0) * 1000)}})  # fmt: skip
 
     def detect(self, image_bgr: np.ndarray) -> list[Detection]:
         inf = self.card.inference
@@ -130,7 +136,8 @@ class YoloDetector:
         if self.tile_filter is not None:
             rects = [(x0, y0, min(x0 + t, w), min(y0 + t, h)) for x0, y0 in offs]
             keep = self.tile_filter(image_bgr, rects)
-            offs = [o for o, k in zip(offs, keep, strict=True) if k]
+            total, offs = len(offs), [o for o, k in zip(offs, keep, strict=True) if k]
+            log.debug("river gate", extra={"fields": {"tiles_kept": len(offs), "tiles": total}})
         crops = [image_bgr[y0 : y0 + t, x0 : x0 + t] for x0, y0 in offs]
 
         b_all, s_all, c_all = [], [], []

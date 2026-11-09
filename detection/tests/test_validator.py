@@ -282,3 +282,18 @@ def test_main_refuses_jev_without_a_key(monkeypatch, tmp_path):
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     assert main() == 2
+
+
+def test_crop_errors_become_validator_errors():
+    v, s = validator([])
+    tiny = np.zeros((100, 100, 3), np.uint8)  # 100 px * upscale 2 < the API's 280 px minimum
+    with pytest.raises(ValidatorError, match="could not build"):
+        v.validate(tiny, [Detection("mining_vessel", 0.9, (40.0, 40.0, 60.0, 60.0))])
+    assert s.calls == []
+
+
+def test_retries_are_logged_without_the_key(caplog):
+    v, _ = validator([Resp(503), Resp(200, answers(0.9))])
+    v.validate(IMAGE, [STRONG])
+    retries = [rec for rec in caplog.records if "retrying" in rec.message]
+    assert len(retries) == 1 and retries[0].http_status == 503 and KEY not in caplog.text

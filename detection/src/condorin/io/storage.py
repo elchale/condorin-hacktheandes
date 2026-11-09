@@ -8,6 +8,7 @@ metadata is read from an optional `<file>.meta.json` sidecar (mimics GCS custom 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 LOCAL_BUCKET = "local"
+log = logging.getLogger(__name__)
 
 
 class StorageError(Exception):
@@ -82,6 +84,7 @@ def _gcs():
 
 def _map_gcs_error(err: Exception, uri: str) -> StorageError:
     from google.api_core import exceptions as gexc
+    from google.auth.exceptions import GoogleAuthError
 
     if isinstance(err, gexc.NotFound):
         return NotFound(uri)
@@ -89,7 +92,10 @@ def _map_gcs_error(err: Exception, uri: str) -> StorageError:
         return Transient(f"{uri}: {err}")
     if isinstance(err, gexc.ClientError):  # 400/401/403/412...
         return PermanentError(f"{uri}: {err}")
-    return Transient(f"{uri}: {err}")  # network errors, timeouts
+    if not isinstance(err, OSError | gexc.GoogleAPIError | GoogleAuthError):  # likely a bug
+        log.warning(f"unexpected {type(err).__name__} from GCS, treated as transient",
+                    extra={"image_uri": uri, "error": str(err)[:300]})  # fmt: skip
+    return Transient(f"{uri}: {type(err).__name__}: {err}")  # network errors, timeouts
 
 
 def _gcs_call(uri: str, fn):
@@ -111,7 +117,10 @@ def stat(uri: str) -> ObjectInfo:
             raise NotFound(uri)
         st = p.path.stat()
         side = p.path.with_name(p.path.name + ".meta.json")
-        md = json.loads(side.read_text()) if side.is_file() else {}
+        try:
+            md = json.loads(side.read_text()) if side.is_file() else {}
+        except ValueError as err:
+            raise PermanentError(f"{side}: invalid JSON sidecar: {err}") from err
         return ObjectInfo(str(st.st_mtime_ns), st.st_size, None, md)
 
     def _do():

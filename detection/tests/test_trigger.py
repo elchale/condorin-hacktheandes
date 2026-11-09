@@ -116,3 +116,23 @@ def test_run_job_sends_prefix_and_task_count(monkeypatch):
     assert sent["body"] == {"overrides": {
         "containerOverrides": [{"env": [{"name": "PREFIX", "value": "yaguas/2026-10-18"}]}],
         "taskCount": 3}}  # fmt: skip
+
+
+def test_procesar_502_when_the_prefix_cannot_be_listed(client, monkeypatch, caplog):
+    c, calls = client
+
+    def denied(bucket, prefix, suffixes):
+        raise PermissionError("403 storage.objects.list denied")
+
+    monkeypatch.setattr(trigger, "count_images", denied)
+    r = c.post("/procesar", json={"prefix": "yaguas/2026-10-18"})
+    assert r.status_code == 502 and calls["run"] == [] and "403" not in r.text
+    assert "could not list the prefix" in caplog.text
+
+
+def test_rejected_requests_are_logged(client, caplog):
+    c, _ = client
+    assert c.post("/procesar", json={"prefix": "../etc"}).status_code == 422
+    assert c.post("/procesar", json={"prefix": "yaguas/1999-01-01"}).status_code == 404
+    assert "invalid request: body.prefix" in caplog.text
+    assert "no images under the prefix" in caplog.text

@@ -183,7 +183,9 @@ class JevValidator:
                 resp = self.session.post(self.url, headers=headers, files=[request_part, *parts],
                                          timeout=s.jev_timeout_s)  # fmt: skip
             except requests.RequestException as err:
-                error = ValidatorError(f"TypeSafe unreachable: {type(err).__name__}")
+                error = ValidatorError(
+                    f"TypeSafe unreachable: {type(err).__name__}: {str(err)[:200]}"
+                )
             else:
                 if resp.status_code == 200:
                     try:
@@ -196,7 +198,11 @@ class JevValidator:
                 if resp.status_code not in RETRY_STATUSES:
                     raise error  # 400/401/413/415/422: the request or the key is wrong
             if attempt < s.jev_max_retries:
-                self.sleep(retry_delay(resp, attempt + 1, self.rand))
+                delay = retry_delay(resp, attempt + 1, self.rand)
+                log.warning(f"TypeSafe attempt {attempt + 1}/{s.jev_max_retries + 1} failed, retrying",
+                            extra={"http_status": error.status, "error": str(error),
+                                   "fields": {"retry_in_s": round(delay, 2)}})  # fmt: skip
+                self.sleep(delay)
         raise error
 
     def validate(self, image_bgr: np.ndarray, candidates: list[Detection]) -> list[Verdict]:
@@ -207,7 +213,10 @@ class JevValidator:
         asked, skipped = ranked[: s.jev_max_candidates], ranked[s.jev_max_candidates :]
         verdicts: list[Verdict] = []
         if asked:
-            body, parts = self.build_request(image_bgr, asked)
+            try:
+                body, parts = self.build_request(image_bgr, asked)
+            except ValueError as err:  # crop outside the API's size range, PNG encoding
+                raise ValidatorError(f"could not build the TypeSafe request: {err}") from err
             answer = self.ask(body, parts)
             answers = answer.get("answers") or {}
             for i, d in enumerate(asked):

@@ -59,25 +59,35 @@ def box_to_webhook(
     return bbox, round(lat, 6), round(lon, 6)
 
 
-def _parse_bounds(value: Any) -> dict | None:
+def _parse_bounds(value: Any, obj: str = "", source: str = "") -> dict | None:
+    """{"sw": [lat, lon], "ne": [lat, lon]}, or None (with a warning) when the value is unusable."""
     if value is None or value == "":
         return None
+
+    def bad(why: str) -> None:
+        log.warning(f"ignoring {source or 'invalid'} bounds: {why}",
+                    extra={"fields": {"object": obj, "bounds": str(value)[:200]}})  # fmt: skip
+
     if isinstance(value, str):
         try:
             value = json.loads(value)
         except json.JSONDecodeError:
-            log.warning("ignoring unparsable bounds metadata", extra={"fields": {"bounds": value}})
-            return None
+            return bad("not valid JSON")
     if hasattr(value, "model_dump"):
         value = value.model_dump()
     try:
         sw = [float(v) for v in value["sw"]]
         ne = [float(v) for v in value["ne"]]
     except (KeyError, TypeError, ValueError):
-        log.warning("ignoring malformed bounds", extra={"fields": {"bounds": str(value)}})
-        return None
+        return bad('expected {"sw": [lat, lon], "ne": [lat, lon]}')
     if len(sw) != 2 or len(ne) != 2:
-        return None
+        return bad("sw and ne must be [lat, lon]")
+    if not all(-90 <= lat <= 90 for lat in (sw[0], ne[0])) or not all(
+        -180 <= lon <= 180 for lon in (sw[1], ne[1])
+    ):
+        return bad("latitude or longitude out of range")
+    if not (sw[0] < ne[0] and sw[1] < ne[1]):  # swapped corners would mirror every detection
+        return bad("sw must be south-west of ne")
     return {"sw": sw, "ne": ne}
 
 
@@ -97,9 +107,11 @@ def resolve_image_meta(
     out: dict = {}
     for field in META_FIELDS:
         value = None
-        for source in (options.get(field), md.get(field), parsed[field]):
+        sources = {"options": options.get(field), "metadata": md.get(field),
+                   "object name": parsed[field]}  # fmt: skip
+        for name, source in sources.items():
             if field == "bounds":
-                source = _parse_bounds(source)  # an invalid source falls through to the next one
+                source = _parse_bounds(source, obj, name)  # invalid: falls through to the next
             if source not in (None, ""):
                 value = source
                 break

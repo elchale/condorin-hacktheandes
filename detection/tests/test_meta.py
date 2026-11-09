@@ -63,3 +63,16 @@ def test_resolve_image_meta_bad_metadata_falls_back_to_name():
     out = resolve_image_meta("b", f"x/{TILE}", {"bounds": "not json"}, None)
     assert out["bounds"] == BOUNDS
     assert resolve_image_meta("b", "flat.jpg", {}, {})["river"] is None
+
+
+@pytest.mark.parametrize("bad", [
+    {"sw": [-2.77, -70.97], "ne": [-2.78, -70.96]},  # corners swapped (latitude)
+    {"sw": [-2.78, -70.96], "ne": [-2.77, -70.97]},  # corners swapped (longitude)
+    {"sw": [-95, -70.97], "ne": [-2.77, -70.96]},  # out of range
+    {"sw": [-2.78], "ne": [-2.77, -70.96]},
+])  # fmt: skip
+def test_unusable_bounds_fall_through_with_a_warning(bad, caplog):
+    out = resolve_image_meta("b", f"x/{TILE}", {"bounds": bad}, None)
+    assert out["bounds"] == BOUNDS  # from the file name
+    rec = next(r for r in caplog.records if r.message.startswith("ignoring metadata bounds"))
+    assert rec.fields["object"] == f"x/{TILE}"
